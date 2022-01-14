@@ -1,0 +1,15 @@
+{application, sendfile,
+ [{description, "Sendfile relay"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {sendfile_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    cowboy,
+    ranch,
+    jsone
+   ]},
+  {env,[]},
+  {modules, []}
+ ]}.
