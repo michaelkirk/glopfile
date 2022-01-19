@@ -58,11 +58,13 @@ init(Req, _InitialState) ->
     QueryString = maps:from_list(cowboy_req:parse_qs(Req)),
     #{method := Method, path := Path} = Req,
     case handle_request(Req, QueryString) of
-        {ok, RespBody}           -> {ok, cowboy_req:reply(200, RespHeaders, RespBody, Req), #state{}};
-        {ok, RespBody, NewReq}   -> {ok, cowboy_req:reply(200, RespHeaders, RespBody, NewReq), #state{}};
-        {stream, StreamArg}      -> {cowboy_loop, cowboy_req:stream_reply(200, StreamRespHeaders, Req), #state{stream = StreamArg}};
-        {websocket, WsArg}       -> {cowboy_websocket, Req, WsArg, sendfile_websocket:websocket_opts()};
-        not_found                -> {ok, cowboy_req:reply(404, RespHeaders, <<>>, Req), #state{}};
+        {ok, RespBody}               -> {ok, cowboy_req:reply(200, RespHeaders, RespBody, Req), #state{}};
+        {ok, RespBody, NewReq}       -> {ok, cowboy_req:reply(200, RespHeaders, RespBody, NewReq), #state{}};
+        {stream, StreamArg}          -> {cowboy_loop, cowboy_req:stream_reply(200, StreamRespHeaders, Req), #state{stream = StreamArg}};
+        {websocket, WsArg}           -> {cowboy_websocket, Req, WsArg, sendfile_websocket:websocket_opts()};
+        not_found                    -> {ok, cowboy_req:reply(404, RespHeaders, <<>>, Req), #state{}};
+        {conflict, RespBody}         -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, Req), #state{}};
+        {conflict, RespBody, NewReq} -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, NewReq), #state{}};
         {invalid, InvalidReason} ->
             ?LOG_INFO("invalid ~s ~s request: ~p", [Method, Path, InvalidReason]),
             {ok, cowboy_req:reply(400, #{}, <<>>, Req), #state{}}
@@ -104,6 +106,8 @@ websocket_info(Message, State) ->
         {stream, StreamArg :: any()} |
         {websocket, WebsocketInitArg :: any()} |
         not_found |
+        {conflict, ResponseBody :: binary()} |
+        {conflict, ResponseBody :: binary(), NewRequest :: cowboy:req()} |
         {invalid, Err :: any()}.
 
 -spec handle_request(Req :: cowboy:req(), QueryString :: #{binary() => binary()}) -> handle_request_result().
@@ -128,8 +132,8 @@ handle_request(#{path := <<"/api/v1/download/", EncodedId/binary>>, method := <<
 handle_request(#{path := <<"/api/v1/upload/", EncodedId/binary>>, method := <<"POST">>}=Req, _QueryString) ->
     handle_request_with_id(EncodedId, fun(Id) -> handle_upload(Id, Req) end);
 
-handle_request(#{path := <<"/api/v1/content/", EncodedId/binary>>, method := <<"GET">>}, _QueryString) ->
-    handle_request_with_id(EncodedId, fun(Id) -> handle_content(Id) end);
+handle_request(#{path := <<"/api/v1/content/", EncodedId/binary>>, method := <<"GET">>}=Req, _QueryString) ->
+    handle_request_with_id(EncodedId, fun(Id) -> handle_content(Id, Req) end);
 
 handle_request(#{path := <<"/api/v1/ws">>}, _QueryString) ->
     {websocket, sendfile_websocket:start_opts()};
@@ -164,17 +168,23 @@ handle_download(<<Id/binary>>) ->
 -spec handle_upload(Id :: binary(), cowboy:req()) -> handle_request_result().
 handle_upload(<<Id/binary>>, Req) ->
     Tag = make_ref(),
-    case sendfile_session:start_upload(Id, Tag) of
-        {ok, Pid} ->
-            UploadedReq = upload(Pid, Req),
-            {ok, <<>>, UploadedReq};
-        {error, not_found} ->
-            not_found
+    case cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
+        {bytes, [{ReqPosition, infinity}]} ->
+            case sendfile_session:start_upload(Id, Tag, ReqPosition) of
+                {ok, Pid} ->
+                    upload(Pid, Req);
+                {position, NewPosition} ->
+                    {conflict, jsone:encode(upload_conflict_response(NewPosition))};
+                {error, not_found} ->
+                    not_found
+            end;
+        _ ->
+            {invalid, invalid_range}
     end.
 
--spec handle_content(Id :: binary()) -> handle_request_result().
-handle_content(<<Id/binary>>) ->
-    case content_stream_init(Id) of
+-spec handle_content(Id :: binary(), cowboy_req:req()) -> handle_request_result().
+handle_content(<<Id/binary>>, Req) ->
+    case content_stream_init(Id, Req) of
         {ok, State} -> {stream, State};
         {error, not_found} -> not_found
     end.
@@ -183,32 +193,46 @@ handle_content(<<Id/binary>>) ->
 %% upload functions
 %%
 
--spec upload(_, _) -> cowboy_req:req().
+-spec upload(_, _) -> handle_request_result().
 upload(Pid, Req) ->
     {Status, Data, BodyReadReq} = cowboy_req:read_body(Req),
     UploadData = case Status of
                      ok -> {data, Data};
                      more -> {more, Data}
                  end,
-    ok = sendfile_session:upload_data(Pid, UploadData),
-    case Status of
-        ok   -> BodyReadReq;
-        more -> upload(Pid, BodyReadReq)
+    case sendfile_session:upload_data(Pid, UploadData) of
+        ok -> case Status of
+                  ok   -> {ok, <<>>, BodyReadReq};
+                  more -> upload(Pid, BodyReadReq)
+              end;
+        {position, NewPosition} ->
+            {conflict, jsone:encode(upload_conflict_response(NewPosition)), BodyReadReq};
+        {error, connection_replaced} ->
+            {ok, <<>>, BodyReadReq}
     end.
+
+-spec upload_conflict_response(Position :: non_neg_integer()) -> jsone:json_object().
+upload_conflict_response(Position) ->
+    #{position => Position}.
 
 %%
 %% content stream functions
 %%
 
--spec content_stream_init(binary()) -> {ok, #content_stream_state{}} | {error, not_found}.
-content_stream_init(<<Id/binary>>) ->
+-spec content_stream_init(binary(), cowboy_req:req()) -> {ok, #content_stream_state{}} | {error, not_found}.
+content_stream_init(<<Id/binary>>, Req) ->
     Tag = make_ref(),
-    case sendfile_session:start_download(Id, Tag) of
-        {ok, Pid} ->
-            monitor(process, Pid),
-            {ok, #content_stream_state{id = Id, tag = Tag, session = Pid}};
-        {error, not_found} ->
-            {error, not_found}
+    case cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
+        {bytes, [{ReqPosition, infinity}]} ->
+            case sendfile_session:start_download(Id, Tag, ReqPosition) of
+                {ok, Pid} ->
+                    monitor(process, Pid),
+                    {ok, #content_stream_state{id = Id, tag = Tag, session = Pid}};
+                {error, not_found} ->
+                    {error, not_found}
+            end;
+        _ ->
+            {invalid, invalid_range}
     end.
 
 -spec content_stream_info(Msg :: any(), cowboy_req:req(), #content_stream_state{}) -> {ok | stop, cowboy_req:req(), #content_stream_state{}}.
@@ -216,9 +240,19 @@ content_stream_info({Tag, {more, Data}}, Req, #content_stream_state{tag = Tag}=S
     NewReq = cowboy_req:stream_body(Data, nofin, Req),
     {ok, NewReq, State};
 content_stream_info({Tag, {data, Data}}, Req, #content_stream_state{tag = Tag}=State) ->
+    #content_stream_state{id = Id, session = Pid} = State,
+    ?LOG_DEBUG("download ~p from ~p finished", [Id, Pid]),
     NewReq = cowboy_req:stream_body(Data, fin, Req),
     {stop, NewReq, State};
-content_stream_info({'DOWN', _Mon, process, Pid, Info}, _Req, #content_stream_state{session = Pid}) ->
+content_stream_info({Tag, {error, connection_replaced}}, Req, #content_stream_state{tag = Tag}=State) ->
+    #content_stream_state{id = Id, session = Pid} = State,
+    ?LOG_DEBUG("download ~p from ~p replaced by new connection", [Id, Pid]),
+    %% TODO cowboy always ends the chunked encoding gracefully, but we would ideally close ungracefully so clients don't
+    %% erroneously think the download is finished.
+    {stop, Req, State};
+content_stream_info({'DOWN', _Mon, process, Pid, Info}, _Req, #content_stream_state{session = Pid}=State) ->
+    #content_stream_state{id = Id} = State,
+    ?LOG_WARNING("download ~p from ~p session died", [Id, Pid]),
     exit({session_died, Info});
 content_stream_info(Msg, Req, State) ->
     ?LOG_WARNING("unknown message: ~p", [Msg]),
