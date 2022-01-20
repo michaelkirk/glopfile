@@ -19,9 +19,10 @@
         {id      :: binary(),
          tag     :: reference(),
          session :: pid()}).
+-type content_stream_state() :: #content_stream_state{}.
 
 -record(state,
-        {stream = undefined :: #content_stream_state{} | undefined}).
+        {stream = undefined :: content_stream_state() | undefined}).
 
 -record(websocket_stop_cast, {}).
 
@@ -219,7 +220,7 @@ upload_conflict_response(Position) ->
 %% content stream functions
 %%
 
--spec content_stream_init(binary(), cowboy_req:req()) -> {ok, #content_stream_state{}} | {error, not_found}.
+-spec content_stream_init(binary(), cowboy_req:req()) -> {ok, content_stream_state()} | {error, not_found}.
 content_stream_init(<<Id/binary>>, Req) ->
     Tag = make_ref(),
     case cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
@@ -235,7 +236,7 @@ content_stream_init(<<Id/binary>>, Req) ->
             {invalid, invalid_range}
     end.
 
--spec content_stream_info(Msg :: any(), cowboy_req:req(), #content_stream_state{}) -> {ok | stop, cowboy_req:req(), #content_stream_state{}}.
+-spec content_stream_info(Msg :: any(), cowboy_req:req(), content_stream_state()) -> {ok | stop, cowboy_req:req(), content_stream_state()}.
 content_stream_info({Tag, {more, Data}}, Req, #content_stream_state{tag = Tag}=State) ->
     NewReq = cowboy_req:stream_body(Data, nofin, Req),
     {ok, NewReq, State};

@@ -17,12 +17,14 @@
          tag :: any(),
          monitor = undefined :: erlang:reference() | undefined,
          position :: non_neg_integer()}).
+-type downloader() :: #downloader{}.
 
 -record(uploader,
         {pid :: pid(),
          tag :: any(),
          monitor = undefined :: erlang:reference() | undefined,
          position :: non_neg_integer()}).
+-type uploader() :: #uploader{}.
 
 -type data() :: {more, binary()} | {data, binary()}.
 
@@ -31,27 +33,33 @@
          waiter :: {start_upload | upload_data, {pid(), any()}},
          position :: non_neg_integer(),
          size :: pos_integer()}).
+-type pending_data() :: #pending_data{}.
 
 -record(state,
         {id :: binary(),
          metadata :: binary(),
-         downloader = undefined :: #downloader{} | undefined,
-         uploader = undefined :: #uploader{} | undefined,
-         pending = undefined :: #pending_data{} | undefined}).
+         downloader = undefined :: downloader() | undefined,
+         uploader = undefined :: uploader() | undefined,
+         pending = undefined :: pending_data() | undefined}).
+-type state() :: #state{}.
 
--record(start_download_call, {from :: #downloader{}}).
+-record(start_download_call, {from :: downloader()}).
+-type start_download_call() :: #start_download_call{}.
 -type start_download_result() :: {ok, SessionPid :: pid()}.
 
--record(start_upload_call, {from :: #uploader{}}).
+-record(start_upload_call, {from :: uploader()}).
+-type start_upload_call() :: #start_upload_call{}.
 -type start_upload_result() :: {ok, SessionPid :: pid()} | {position, non_neg_integer()}.
 
 -record(upload_data_call, {data :: data()}).
+-type upload_data_call() :: #upload_data_call{}.
 -type upload_data_result() :: ok | {error, data_pending | connection_replaced} | {position, non_neg_integer()}.
 
 -record(metadata_call, {}).
+-type metadata_call() :: #metadata_call{}.
 -type metadata_result() :: {ok, Metadata :: binary()}.
 
--type call() :: #start_download_call{} | #start_upload_call{} | #upload_data_call{} | #metadata_call{}.
+-type call() :: start_download_call() | start_upload_call() | upload_data_call() | metadata_call().
 
 -type call_result() :: {error, sendfile_session_table:get_error()}.
 
@@ -158,14 +166,14 @@ terminate(_Reason, State) ->
 %% call handlers
 %%
 
--type handle_call_result(Reply) :: {reply, Reply, #state{}} | {noreply, #state{}} | {stop, Reason :: any(), Reply, #state{}}.
+-type handle_call_result(Reply) :: {reply, Reply, state()} | {noreply, state()} | {stop, Reason :: any(), Reply, state()}.
 
--spec handle_metadata_call(From :: {pid(), any()}, #state{}) -> handle_call_result(metadata_result()).
+-spec handle_metadata_call(From :: {pid(), any()}, state()) -> handle_call_result(metadata_result()).
 handle_metadata_call(_From, State) ->
     {reply, {ok, State#state.metadata}, State}.
 
 
--spec handle_start_download_call(#downloader{}, From :: {pid(), any()}, #state{}) -> handle_call_result(start_download_result()).
+-spec handle_start_download_call(downloader(), From :: {pid(), any()}, state()) -> handle_call_result(start_download_result()).
 %% another downloader is already connected
 handle_start_download_call(NewDownloader, From, #state{downloader = #downloader{}=OldDownloader}=State) ->
     terminate_downloader(OldDownloader, connection_replaced),
@@ -203,7 +211,7 @@ handle_start_download_call(Downloader, _From, State) ->
     Monitor = monitor(process, Downloader#downloader.pid),
     {reply, {ok, self()}, UploaderUpdatedState#state{downloader = Downloader#downloader{monitor = Monitor}}}.
 
--spec handle_start_upload_call(#uploader{}, From :: {pid(), any()}, #state{}) -> handle_call_result(start_upload_result()).
+-spec handle_start_upload_call(uploader(), From :: {pid(), any()}, state()) -> handle_call_result(start_upload_result()).
 %% another uploader is already connected
 handle_start_upload_call(NewUploader, From, #state{uploader = #uploader{}=OldUploader}=State) ->
     terminate_uploader(OldUploader, connection_replaced),
@@ -231,7 +239,7 @@ handle_start_upload_call(Uploader, From, State) ->
             {reply, {ok, self()}, State#state{uploader = Uploader#uploader{monitor = Monitor}}}
     end.
 
--spec handle_upload_data_call(data(), From :: {pid(), any()}, #state{}) -> handle_call_result(upload_data_result()).
+-spec handle_upload_data_call(data(), From :: {pid(), any()}, state()) -> handle_call_result(upload_data_result()).
 %% caller error; uploader pid doesn't match the caller
 handle_upload_data_call(_Data, {FromPid, _}, #state{uploader = #uploader{pid = UploaderPid}}=State)
   when FromPid =/= UploaderPid ->
@@ -263,11 +271,11 @@ handle_upload_data_call({_, DataBin}=Data, From, State) ->
     {noreply, State#state{pending = #pending_data{data = Data, waiter = {upload_data, From}, position = Position, size = DataSize},
                           uploader = State#state.uploader#uploader{position = Position + DataSize}}}.
 
--spec handle_uploader_disconnected(#state{}) -> #state{}.
+-spec handle_uploader_disconnected(state()) -> state().
 handle_uploader_disconnected(State) ->
     State#state{uploader = undefined}.
 
--spec handle_downloader_disconnected(#state{}) -> #state{}.
+-spec handle_downloader_disconnected(state()) -> state().
 handle_downloader_disconnected(State) ->
     State#state{downloader = undefined}.
 
@@ -284,16 +292,16 @@ start_upload_reply(From, Reply) ->
 upload_data_reply(From, Reply) ->
     gen_server:reply(From, Reply).
 
--spec terminate_uploader(#uploader{}, upload_error()) -> _.
+-spec terminate_uploader(uploader(), upload_error()) -> _.
 terminate_uploader(#uploader{pid = Pid, tag = Tag, monitor = Monitor}, Err) ->
     Pid ! {Tag, {error, Err}},
     demonitor(Monitor).
 
--spec terminate_downloader(#downloader{}, download_error()) -> _.
+-spec terminate_downloader(downloader(), download_error()) -> _.
 terminate_downloader(#downloader{pid = Pid, tag = Tag, monitor = Monitor}, Err) ->
     Pid ! {Tag, {error, Err}},
     demonitor(Monitor).
 
--spec send_data(data(), #downloader{}) -> _.
+-spec send_data(data(), downloader()) -> _.
 send_data(Data, #downloader{pid = Pid, tag = Tag}) ->
     Pid ! {Tag, Data}.

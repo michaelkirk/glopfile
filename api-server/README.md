@@ -4,7 +4,7 @@ Sendfile relay
 
 ## Development
 
-[Internal API Documentation](https://jessa0.github.io/sendfile/apps/sendfile/doc/)
+[Internal API Documentation](https://jessa0.github.io/sendfile/)
 
 ## Building with docker
 
