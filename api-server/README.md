@@ -2,6 +2,10 @@
 
 Sendfile relay
 
+## Development
+
+[Internal API Documentation](https://jessa0.github.io/sendfile/apps/sendfile/doc/)
+
 ## Building with docker
 
 Building with the [`container-build`](https://github.com/container-build/container-build) script requires python3 and
