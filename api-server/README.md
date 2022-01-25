@@ -41,14 +41,13 @@ To start a remote Erlang shell on the node:
 $ docker exec -it $container erl -remsh sendfile@localhost -hidden
 ```
 
-To re-compile and hot-load changes to a module on the running node (replacing `Mod` with the module):
+To re-compile and hot-load code changes to modules on the running node:
 
 ```
 $ docker cp apps $container:/home/erlang/
 $ docker exec -u root:root $container chown -R erlang:erlang /home/erlang/apps
 $ docker exec -it $container erl -remsh sendfile@localhost -hidden
-(sendfile@localhost)1> {ok, _} = c(Mod).
-(sendfile@localhost)2> {module, _} = l(Mod).
+(sendfile@localhost)1> gen_cluster_code:load_all().
 ```
 
 Only hot-load code when you know the new code will be compatible with any running state in the system.

@@ -8,7 +8,8 @@
     stdlib,
     cowboy,
     ranch,
-    jsone
+    jsone,
+    gen_cluster
    ]},
   {env,[]},
   {modules, []}

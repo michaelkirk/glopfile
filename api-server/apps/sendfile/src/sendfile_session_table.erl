@@ -1,5 +1,5 @@
 -module(sendfile_session_table).
--behaviour(gen_server).
+-behaviour(gen_cluster_server).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -8,13 +8,23 @@
 -export_type([get_error/0]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, terminate/2]).
+-export([init/2, dispatch_call/4, dispatch_cast/3]).
 
 -define(SERVER, sendfile_session_table).
 -define(TABLE, sendfile_session).
 -record(?TABLE, {id, pid}).
 
+-define(FRAGMENT_COUNT, 2).
+
 -define(ID_LENGTH, 8).
+
+-record(create_call,
+        {id :: binary(),
+         pid :: pid()}).
+
+-record(get_call, {id :: binary()}).
+
+-record(delete_call, {id :: binary()}).
 
 -type get_error() :: not_found.
 
@@ -29,7 +39,19 @@ child_spec() ->
 
 -spec start_link() -> ignore | {error, _} | {ok, pid() | {pid(), reference()}}.
 start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, {}, []).
+    Nodes = case sendfile_app:session_table_nodes() of
+                            {ok, OkNodes} -> OkNodes;
+                            undefined     -> [node()]
+                        end,
+    case lists:member(node(), Nodes) of
+        true ->
+            Peers = lists:delete(node(), Nodes),
+            gen_cluster_server:start_link(?SERVER, ?MODULE, {Peers}, []);
+        false ->
+            ?LOG_INFO(?MODULE_STRING " disabled for ~p, connecting to: ~p", [node(), Nodes]),
+            net_adm:ping_list(Nodes),
+            ignore
+    end.
 
 -spec new_id() -> binary().
 new_id() ->
@@ -37,40 +59,45 @@ new_id() ->
 
 -spec create(binary(), pid()) -> ok | {error, already_exists}.
 create(<<Id/binary>>, Pid) when is_pid(Pid) ->
-    %% TODO monitor pid to delete when process dies
-    case ets:insert_new(?TABLE, #sendfile_session{id = Id, pid = Pid}) of
-        true -> ok;
-        false -> {error, already_exists}
-    end.
+    gen_server:call({via, gen_cluster_client, {?SERVER, 1}}, #create_call{id = Id, pid = Pid}).
 
 -spec get(binary()) -> {error, get_error()} | {ok, pid()}.
 get(<<Id/binary>>) ->
-    case ets:lookup(?TABLE, Id) of
-        [#sendfile_session{pid = Pid}] -> {ok, Pid};
-        [] -> {error, not_found}
-    end.
+    gen_server:call({via, gen_cluster_client, {?SERVER, 1}}, #get_call{id = Id}).
 
 -spec delete(binary()) -> _.
 delete(<<Id/binary>>) ->
-    ets:delete(?TABLE, Id).
+    gen_server:call({via, gen_cluster_client, {?SERVER, 1}}, #delete_call{id = Id}).
 
 %%
 %% gen_server callbacks
 %%
 
-init({}) ->
-    ?LOG_INFO(?MODULE_STRING " starting on ~p", [node()]),
-    ets:new(?TABLE, [set, public, named_table, {keypos, #?TABLE.id}]),
+init({Peers}, _Group) ->
+    _ = mnesia:start(),
+    {ok, _} = mnesia:change_config(extra_db_nodes, Peers),
+    {atomic, ok} = gen_cluster_mnesia:create_table(?TABLE, ?FRAGMENT_COUNT, record_info(fields, ?TABLE), ram_copies),
     {ok, nostate}.
 
-handle_call(Request, From, State) ->
+dispatch_call(#create_call{id = Id, pid = Pid}, _From, _Group, State) ->
+    Reply = gen_cluster_mnesia:write_new(?TABLE, #sendfile_session{id = Id, pid = Pid}, transaction),
+    {reply, Reply, State};
+
+dispatch_call(#get_call{id = Id}, _From, _Group, State) ->
+    Reply = case gen_cluster_mnesia:read(?TABLE, Id, transaction) of
+                [#sendfile_session{pid = Pid} | _] -> {ok, Pid};
+                []                                 -> {error, not_found}
+            end,
+    {reply, Reply, State};
+
+dispatch_call(#delete_call{id = Id}, _From, _Group, State) ->
+    gen_cluster_mnesia:delete(?TABLE, Id, transaction),
+    {reply, ok, State};
+
+dispatch_call(Request, From, _Group, State) ->
     ?LOG_WARNING("unknown call from ~p: ~p", [From, Request]),
     {reply, unknown_call, State}.
 
-handle_cast(Message, State) ->
+dispatch_cast(Message, _Group, State) ->
     ?LOG_WARNING("unknown cast: ~p", [Message]),
     {noreply, State}.
-
-terminate(Reason, _State) ->
-    ?LOG_INFO(?MODULE_STRING " stopping: ~p", [Reason]),
-    ok.
