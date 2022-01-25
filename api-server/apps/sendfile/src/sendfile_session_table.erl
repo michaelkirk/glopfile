@@ -76,7 +76,10 @@ delete(<<Id/binary>>) ->
 init({Peers}, _Group) ->
     _ = mnesia:start(),
     {ok, _} = mnesia:change_config(extra_db_nodes, Peers),
-    {atomic, ok} = gen_cluster_mnesia:create_table(?TABLE, ?FRAGMENT_COUNT, record_info(fields, ?TABLE), ram_copies),
+    case gen_cluster_mnesia:create_table(?TABLE, ?FRAGMENT_COUNT, record_info(fields, ?TABLE), ram_copies) of
+        {atomic, ok} -> ok;
+        {aborted, {already_exists, _}} -> ok
+    end,
     {ok, nostate}.
 
 dispatch_call(#create_call{id = Id, pid = Pid}, _From, _Group, State) ->
