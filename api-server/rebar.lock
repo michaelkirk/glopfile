@@ -1,6 +1,10 @@
 {"1.2.0",
 [{<<"cowboy">>,{pkg,<<"cowboy">>,<<"2.9.0">>},0},
  {<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.11.0">>},1},
+ {<<"gen_cluster">>,
+  {git,"https://github.com/jessa0/gen_cluster.git",
+       {ref,"e264233e11d443b4b93d01280fb785f1905b4cf9"}},
+  0},
  {<<"jsone">>,{pkg,<<"jsone">>,<<"1.7.0">>},0},
  {<<"ranch">>,{pkg,<<"ranch">>,<<"2.1.0">>},0}]}.
 [
