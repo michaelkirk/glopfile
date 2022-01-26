@@ -1,0 +1,47 @@
+body {
+  background-color: black;
+  color: white;
+  padding: 16px;
+  font-family: monospace;
+}
+
+.App {
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.dropZone {
+  border: solid white 1px;
+  padding: 80px 20px;
+}
+
+.dropZoneInstructions {
+  font-size: 18px;
+}
+
+.pickerInstructions {
+  font-size: 12px;
+}
+
+.App-footer {
+  margin-top: 16px;
+}
+
+.nav a,
+.nav a:visited {
+  color: #ddd;
+}
+
+.App-footer .farewell {
+  float: right;
+}
+
+input[type="text"]#download-url {
+  width: 100%;
+}
+
+a,
+a:visited {
+  color: white;
+}
