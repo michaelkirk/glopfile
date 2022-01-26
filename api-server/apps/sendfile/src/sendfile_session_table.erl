@@ -77,8 +77,17 @@ init({Peers}, _Group) ->
     _ = mnesia:start(),
     {ok, _} = mnesia:change_config(extra_db_nodes, Peers),
     case gen_cluster_mnesia:create_table(?TABLE, ?FRAGMENT_COUNT, record_info(fields, ?TABLE), ram_copies) of
-        {atomic, ok} -> ok;
-        {aborted, {already_exists, _}} -> ok
+        {atomic, ok} -> ?LOG_INFO("created mnesia table ~p", [?TABLE]);
+        {aborted, {already_exists, _}} ->
+            case mnesia:add_table_copy(?TABLE, node(), ram_copies) of
+                {atomic, ok} -> ?LOG_INFO("added copy of mnesia table ~p", [?TABLE]);
+                {aborted, {already_exists, _, _}} -> ok
+            end,
+            Frags = mnesia:activity(transaction, fun mnesia:table_info/2, [?TABLE, frag_names], mnesia_frag),
+            [ case mnesia:add_table_copy(Frag, node(), ram_copies) of
+                  {atomic, ok} -> ?LOG_INFO("adding copy of mnesia table ~p fragment ~p", [?TABLE, Frag]);
+                  {aborted, {already_exists, _, _}} -> ok
+              end || Frag <- Frags ]
     end,
     {ok, nostate}.
 
