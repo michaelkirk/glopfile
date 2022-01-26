@@ -89,7 +89,9 @@ dispatch_call(#create_call{id = Id, pid = Pid}, _From, _Group, State) ->
 dispatch_call(#get_call{id = Id}, _From, _Group, State) ->
     Reply = case gen_cluster_mnesia:read(?TABLE, Id, transaction) of
                 [#sendfile_session{pid = Pid} | _] -> {ok, Pid};
-                []                                 -> {error, not_found}
+                []                                 -> {error, not_found};
+                {aborted, Err}                     -> {error, {internal, Err}};
+                Err                                -> {error, {unknown, Err}}
             end,
     {reply, Reply, State};
 
