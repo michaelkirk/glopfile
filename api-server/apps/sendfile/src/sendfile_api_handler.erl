@@ -5,9 +5,18 @@
 
 %% API
 -export([websocket_stop/1, websocket_send/2]).
+-ignore_xref([websocket_send/2]). %% unused so far
 
 %% cowboy_handler callbacks
--export([init/2, info/3]).
+-export([init/2]).
+
+%% cowboy_loop callbacks
+-export([info/3]).
+
+%% ignore "unused exports" here since we can't declare -behaviour(cowboy_loop) above. it technically conflicts with
+%% cowboy_websocket, but is fine since both are derived from cowboy_handler, and it seems there's no way to ignore the
+%% warning.
+-ignore_xref([info/3]).
 
 %% cowboy_websocket callbacks
 -export([websocket_init/1, websocket_handle/2, websocket_info/2]).
@@ -70,6 +79,10 @@ init(Req, _InitialState) ->
             ?LOG_INFO("invalid ~s ~s request: ~p", [Method, Path, InvalidReason]),
             {ok, cowboy_req:reply(400, #{}, <<>>, Req), #state{}}
     end.
+
+%%
+%% cowboy_loop callbacks
+%%
 
 info(Msg, Req, #state{stream = #content_stream_state{}}=State) ->
     {Status, NewReq, NewStreamState} = content_stream_info(Msg, Req, State#state.stream),

@@ -1,10 +1,15 @@
 -module(sendfile_session).
 -behaviour(gen_server).
+-behaviour(sendfile_child).
 
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([start/1, simple_child_spec/0, start_link/2, start_download/3, start_upload/3, upload_data/2, metadata/1]).
+-export([start/1, start_link/2, start_download/3, start_upload/3, upload_data/2, metadata/1]).
+-ignore_xref([start_link/2]).                   % xref doesn't take simple_one_for_one children into account
+
+%% sendfile_child callbacks
+-export([child_spec/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
@@ -77,12 +82,6 @@ start(Metadata) ->
     {ok, Pid} = ?SUPERVISOR:start_child([Id, Metadata]),
     {ok, Pid, Id}.
 
--spec simple_child_spec() -> supervisor:child_spec().
-simple_child_spec() ->
-    #{id => ?MODULE,
-      start => {?MODULE, start_link, []},
-      restart => transient}.
-
 -spec start_link(Id :: binary(), Metadata :: binary()) -> {ok, pid() | {pid(), reference()}} | {error, _} | ignore.
 start_link(Id, Metadata) ->
     gen_server:start_link(?MODULE, {Id, Metadata}, []).
@@ -109,6 +108,16 @@ call(<<Id/binary>>, Req, Timeout) ->
         {ok, Pid}    -> gen_server:call(Pid, Req, Timeout);
         {error, Err} -> {error, Err}
     end.
+
+%%
+%% sendfile_child callbacks
+%%
+
+-spec child_spec() -> supervisor:child_spec().
+child_spec() ->
+    #{id => ?MODULE,
+      start => {?MODULE, start_link, []},
+      restart => transient}.
 
 %%
 %% gen_server callbacks

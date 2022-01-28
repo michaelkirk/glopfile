@@ -4,6 +4,7 @@
 
 %% API
 -export([start/0, stop/0]).
+-ignore_xref([start/0, stop/0]). % unused, but useful in the shell
 
 %%
 %% API

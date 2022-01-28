@@ -1,11 +1,16 @@
 -module(sendfile_session_table).
 -behaviour(gen_cluster_server).
+-behaviour(sendfile_child).
 
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([child_spec/0, start_link/0, new_id/0, create/2, get/1, delete/1]).
+-export([start_link/0, new_id/0, create/2, get/1, delete/1]).
 -export_type([get_error/0]).
+-ignore_xref([start_link/0]).                   % xref doesn't understand the MFA returned by child_spec/0
+
+%% sendfile_child callbacks
+-export([child_spec/0]).
 
 %% gen_server callbacks
 -export([init/2, dispatch_call/4, dispatch_cast/3]).
@@ -31,11 +36,6 @@
 %%
 %% API
 %%
-
--spec child_spec() -> supervisor:child_spec().
-child_spec() ->
-    #{id => ?MODULE,
-      start => {?MODULE, start_link, []}}.
 
 -spec start_link() -> ignore | {error, _} | {ok, pid() | {pid(), reference()}}.
 start_link() ->
@@ -68,6 +68,14 @@ get(<<Id/binary>>) ->
 -spec delete(binary()) -> _.
 delete(<<Id/binary>>) ->
     gen_server:call({via, gen_cluster_client, {?SERVER, 1}}, #delete_call{id = Id}).
+
+%%
+%% sendfile_child callbacks
+%%
+
+child_spec() ->
+    #{id => ?MODULE,
+      start => {?MODULE, start_link, []}}.
 
 %%
 %% gen_server callbacks
