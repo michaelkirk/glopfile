@@ -5,7 +5,6 @@
 
 %% API
 -export([websocket_stop/1, websocket_send/2]).
--ignore_xref([websocket_send/2]). %% unused so far
 
 %% cowboy_handler callbacks
 -export([init/2]).
@@ -197,8 +196,8 @@ handle_download(<<_Id/binary>>, <<"content">>, _Req) ->
 %% websocket endpoint
 handle_download(<<Id/binary>>, <<"ws">>, _Req) ->
     case sendfile_session_table:get(Id) of
-        {ok, _SessionPid} ->
-            {websocket, sendfile_websocket:start_opts()};
+        {ok, SessionPid} ->
+            {websocket, sendfile_websocket:start_opts(Id, SessionPid, download)};
         {error, not_found} ->
             not_found
     end;
@@ -232,8 +231,8 @@ handle_upload(<<_Id/binary>>, <<>>, _Req) ->
 %% websocket endpoint
 handle_upload(<<Id/binary>>, <<"ws">>, _Req) ->
     case sendfile_session_table:get(Id) of
-        {ok, _SessionPid} ->
-            {websocket, sendfile_websocket:start_opts()};
+        {ok, SessionPid} ->
+            {websocket, sendfile_websocket:start_opts(Id, SessionPid, upload)};
         {error, not_found} ->
             not_found
     end;
