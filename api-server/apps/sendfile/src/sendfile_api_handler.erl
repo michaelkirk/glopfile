@@ -73,6 +73,7 @@ init(Req, _InitialState) ->
         {stream, StreamArg}          -> {cowboy_loop, cowboy_req:stream_reply(200, StreamRespHeaders, Req), #state{stream = StreamArg}};
         {websocket, WsArg}           -> {cowboy_websocket, Req, WsArg, sendfile_websocket:websocket_opts()};
         not_found                    -> {ok, cowboy_req:reply(404, RespHeaders, <<>>, Req), #state{}};
+        invalid_method               -> {ok, cowboy_req:reply(405, RespHeaders, <<>>, Req), #state{}};
         {conflict, RespBody}         -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, Req), #state{}};
         {conflict, RespBody, NewReq} -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, NewReq), #state{}};
         {invalid, InvalidReason} ->
@@ -118,8 +119,9 @@ websocket_info(Message, State) ->
         {ok, ResponseBody :: binary()} |
         {ok, ResponseBody :: binary(), NewRequest :: cowboy:req()} |
         {stream, StreamArg :: any()} |
-        {websocket, WebsocketInitArg :: any()} |
+        {websocket, WebsocketInitArg :: sendfile_websocket:start_opts()} |
         not_found |
+        invalid_method |
         {conflict, ResponseBody :: binary()} |
         {conflict, ResponseBody :: binary(), NewRequest :: cowboy:req()} |
         {invalid, Err :: any()}.
@@ -140,47 +142,74 @@ handle_request(#{path := <<"/api/v1/files">>, method := <<"POST">>}=Req, _QueryS
             {invalid, metadata_missing}
     end;
 
-handle_request(#{path := <<"/api/v1/download/", EncodedId/binary>>, method := <<"GET">>}, _QueryString) ->
-    handle_request_with_id(EncodedId, fun(Id) -> handle_download(Id) end);
+handle_request(#{path := <<"/api/v1/download/", SubPath/binary>>}=Req, _QueryString) ->
+    handle_request_with_id(SubPath, fun(Id, Path) -> handle_download(Id, Path, Req) end);
 
-handle_request(#{path := <<"/api/v1/upload/", EncodedId/binary>>, method := <<"POST">>}=Req, _QueryString) ->
-    handle_request_with_id(EncodedId, fun(Id) -> handle_upload(Id, Req) end);
+handle_request(#{path := <<"/api/v1/upload/", SubPath/binary>>}=Req, _QueryString) ->
+    handle_request_with_id(SubPath, fun(Id, Path) -> handle_upload(Id, Path, Req) end);
 
-handle_request(#{path := <<"/api/v1/content/", EncodedId/binary>>, method := <<"GET">>}=Req, _QueryString) ->
-    handle_request_with_id(EncodedId, fun(Id) -> handle_content(Id, Req) end);
-
-handle_request(#{path := <<"/api/v1/ws">>}, _QueryString) ->
-    {websocket, sendfile_websocket:start_opts()};
+handle_request(#{path := <<"/api/v1/content/", SubPath/binary>>}=Req, _QueryString) ->
+    handle_request_with_id(SubPath, fun(Id, Path) -> handle_content(Id, Path, Req) end);
 
 handle_request(_Request, _QueryString) ->
     not_found.
 
--spec handle_request_with_id(Id :: binary(), Fun) -> Res when
-      Fun :: fun((EncodedId :: binary()) -> Res).
-handle_request_with_id(<<EncodedId/binary>>, Fun) ->
-    case decode_id(EncodedId) of
-        {ok, Id} ->
-            Fun(Id);
+-spec handle_request_with_id(Path :: binary(), Fun) -> Res when
+      Fun :: fun((DecodedId :: binary(), SubPath :: binary()) -> Res).
+handle_request_with_id(<<Path/binary>>, Fun) ->
+    case decode_id(Path) of
+        {ok, Id, SubPath} ->
+            Fun(Id, SubPath);
         {error, Err} ->
-            ?LOG_WARNING("invalid id in download url: ~s: ~p", [EncodedId, Err]),
+            ?LOG_WARNING("invalid id in download url: ~s: ~p", [Path, Err]),
             {invalid, invalid_id}
     end.
 
--spec handle_download(Id :: binary()) -> handle_request_result().
-handle_download(<<Id/binary>>) ->
+-spec handle_download(Id :: binary(), Path :: binary(), Req :: cowboy_req:req()) -> handle_request_result().
+%% GET to top-level endpoint
+handle_download(<<Id/binary>>, <<>>, #{method := <<"GET">>}) ->
     EncodedId = encode_id(Id),
     case sendfile_session:metadata(Id) of
         {ok, Metadata} ->
             ResponseMap =
                 #{meta => Metadata,
-                  encrypted_content_url => <<"/api/v1/content/", EncodedId/binary>>},
+                  encrypted_content_url => <<"/api/v1/download/", EncodedId/binary, "/content">>},
             {ok, jsone:encode(ResponseMap)};
         {error, not_found} ->
             not_found
-    end.
+    end;
 
--spec handle_upload(Id :: binary(), cowboy:req()) -> handle_request_result().
-handle_upload(<<Id/binary>>, Req) ->
+%% non-GET to top-level endpoint
+handle_download(<<_Id/binary>>, <<>>, _Req) ->
+    invalid_method;
+
+%% GET to content endpoint
+handle_download(<<Id/binary>>, <<"content">>, #{method := <<"GET">>}=Req) ->
+    case content_stream_init(Id, Req) of
+        {ok, State} -> {stream, State};
+        {error, not_found} -> not_found
+    end;
+
+%% non-GET to content endpoint
+handle_download(<<_Id/binary>>, <<"content">>, _Req) ->
+    invalid_method;
+
+%% websocket endpoint
+handle_download(<<Id/binary>>, <<"ws">>, _Req) ->
+    case sendfile_session_table:get(Id) of
+        {ok, _SessionPid} ->
+            {websocket, sendfile_websocket:start_opts()};
+        {error, not_found} ->
+            not_found
+    end;
+
+%% non-existent endpoint
+handle_download(_Id, _Path, _Req) ->
+    not_found.
+
+-spec handle_upload(Id :: binary(), Path :: binary(), cowboy:req()) -> handle_request_result().
+%% POST to top-level endpoint
+handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
     Tag = make_ref(),
     case cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
         {bytes, [{ReqPosition, infinity}]} ->
@@ -194,14 +223,40 @@ handle_upload(<<Id/binary>>, Req) ->
             end;
         _ ->
             {invalid, invalid_range}
-    end.
+    end;
 
--spec handle_content(Id :: binary(), cowboy_req:req()) -> handle_request_result().
-handle_content(<<Id/binary>>, Req) ->
+%% non-POST to top-level endpoint
+handle_upload(<<_Id/binary>>, <<>>, _Req) ->
+    invalid_method;
+
+%% websocket endpoint
+handle_upload(<<Id/binary>>, <<"ws">>, _Req) ->
+    case sendfile_session_table:get(Id) of
+        {ok, _SessionPid} ->
+            {websocket, sendfile_websocket:start_opts()};
+        {error, not_found} ->
+            not_found
+    end;
+
+%% non-existent endpoint
+handle_upload(_Id, _Path, _Req) ->
+    not_found.
+
+-spec handle_content(Id :: binary(), Path :: binary(), cowboy_req:req()) -> handle_request_result().
+%% GET to top-level endpoint
+handle_content(<<Id/binary>>, <<>>, #{method := <<"GET">>}=Req) ->
     case content_stream_init(Id, Req) of
         {ok, State} -> {stream, State};
         {error, not_found} -> not_found
-    end.
+    end;
+
+%% non-GET to top-level endpoint
+handle_content(<<_Id/binary>>, <<>>, _Req) ->
+    invalid_method;
+
+%% non-existent endpoint
+handle_content(_Id, _Path, _Req) ->
+    not_found.
 
 %%
 %% upload functions
@@ -286,10 +341,16 @@ encode_id_from_base64_ch($/) -> <<$_>>;
 encode_id_from_base64_ch($=) -> <<$~>>;
 encode_id_from_base64_ch(Ch) -> <<Ch>>.
 
--spec decode_id(EncodedId :: binary()) -> {ok, Id :: binary()} | {error, _}.
-decode_id(<<EncodedId/binary>>) ->
+-spec decode_id(Path :: binary()) -> {ok, Id :: binary(), SubPath :: binary()} | {error, _}.
+decode_id(<<Path/binary>>) ->
+    case binary:split(Path, <<"/">>) of
+        [EncodedId, RestPath] -> ok;
+        [EncodedId] -> RestPath = <<>>;
+        [] -> {EncodedId, RestPath} = {<<>>, <<>>}
+    end,
     try base64:decode(<< (decode_id_to_base64_ch(Ch)) || <<Ch>> <= EncodedId >>) of
-        Id -> {ok, Id}
+        <<>> -> {error, empty_id};
+        Id   -> {ok, Id, RestPath}
     catch
         _:Err -> {error, Err}
     end.
