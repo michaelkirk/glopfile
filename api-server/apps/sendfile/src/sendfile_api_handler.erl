@@ -251,13 +251,13 @@ content_stream_init(<<Id/binary>>, Req) ->
 
 -spec content_stream_info(Msg :: any(), cowboy_req:req(), content_stream_state()) -> {ok | stop, cowboy_req:req(), content_stream_state()}.
 content_stream_info({Tag, {more, Data}}, Req, #content_stream_state{tag = Tag}=State) ->
-    NewReq = cowboy_req:stream_body(Data, nofin, Req),
-    {ok, NewReq, State};
+    ok = cowboy_req:stream_body(Data, nofin, Req),
+    {ok, Req, State};
 content_stream_info({Tag, {data, Data}}, Req, #content_stream_state{tag = Tag}=State) ->
     #content_stream_state{id = Id, session = Pid} = State,
     ?LOG_DEBUG("download ~p from ~p finished", [Id, Pid]),
-    NewReq = cowboy_req:stream_body(Data, fin, Req),
-    {stop, NewReq, State};
+    ok = cowboy_req:stream_body(Data, fin, Req),
+    {stop, Req, State};
 content_stream_info({Tag, {error, connection_replaced}}, Req, #content_stream_state{tag = Tag}=State) ->
     #content_stream_state{id = Id, session = Pid} = State,
     ?LOG_DEBUG("download ~p from ~p replaced by new connection", [Id, Pid]),
