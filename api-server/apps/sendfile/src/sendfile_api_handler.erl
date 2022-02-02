@@ -77,7 +77,7 @@ init(Req, _InitialState) ->
         {conflict, RespBody, NewReq} -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, NewReq), #state{}};
         {invalid, InvalidReason} ->
             ?LOG_INFO("invalid ~s ~s request: ~p", [Method, Path, InvalidReason]),
-            {ok, cowboy_req:reply(400, #{}, <<>>, Req), #state{}}
+            {ok, cowboy_req:reply(400, RespHeaders, <<>>, Req), #state{}}
     end.
 
 %%
