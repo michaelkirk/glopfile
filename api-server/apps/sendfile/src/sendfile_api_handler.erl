@@ -126,20 +126,8 @@ websocket_info(Message, State) ->
         {invalid, Err :: any()}.
 
 -spec handle_request(Req :: cowboy:req(), QueryString :: #{binary() => binary()}) -> handle_request_result().
-handle_request(#{path := <<"/api/v1/files">>, method := <<"POST">>}=Req, _QueryString) ->
-    {ok, BodyKVList, BodyReadReq} = cowboy_req:read_urlencoded_body(Req),
-    BodyKVMap = maps:from_list(BodyKVList),
-    case BodyKVMap of
-        #{<<"encrypted_metadata">> := Metadata} ->
-            {ok, _Pid, Id} = sendfile_session:start(Metadata),
-            EncodedId = encode_id(Id),
-            ResponseMap =
-                #{upload_url   => <<"/api/v1/upload/", EncodedId/binary>>,
-                  download_url => <<"/api/v1/download/", EncodedId/binary>>},
-            {ok, jsone:encode(ResponseMap), BodyReadReq};
-        _ ->
-            {invalid, metadata_missing}
-    end;
+handle_request(#{path := <<"/api/v1/files">>}=Req, _QueryString) ->
+    handle_files(Req);
 
 handle_request(#{path := <<"/api/v1/download/", SubPath/binary>>}=Req, _QueryString) ->
     handle_request_with_id(SubPath, fun(Id, Path) -> handle_download(Id, Path, Req) end);
@@ -163,6 +151,27 @@ handle_request_with_id(<<Path/binary>>, Fun) ->
             ?LOG_WARNING("invalid id in download url: ~s: ~p", [Path, Err]),
             {invalid, invalid_id}
     end.
+
+-spec handle_files(cowboy_req:req()) -> handle_request_result().
+%% POST request
+handle_files(#{method := <<"POST">>}=Req) ->
+    {ok, BodyKVList, BodyReadReq} = cowboy_req:read_urlencoded_body(Req),
+    BodyKVMap = maps:from_list(BodyKVList),
+    case BodyKVMap of
+        #{<<"encrypted_metadata">> := Metadata} ->
+            {ok, _Pid, Id} = sendfile_session:start(Metadata),
+            EncodedId = encode_id(Id),
+            ResponseMap =
+                #{upload_url   => <<"/api/v1/upload/", EncodedId/binary>>,
+                  download_url => <<"/api/v1/download/", EncodedId/binary>>},
+            {ok, jsone:encode(ResponseMap), BodyReadReq};
+        _ ->
+            {invalid, metadata_missing}
+    end;
+
+%% non-POST request
+handle_files(_Req) ->
+    invalid_method.
 
 -spec handle_download(Id :: binary(), Path :: binary(), Req :: cowboy_req:req()) -> handle_request_result().
 %% GET to top-level endpoint
