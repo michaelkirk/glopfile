@@ -38,3 +38,14 @@ jobs:
           git add -f docs
           git commit -m "render edocs"
           git push -f origin HEAD:gh-pages
+
+      - name: run integration tests (common_test)
+        run:  |
+          rebar3 ct || true
+          mv _build/test/logs docs/ct
+
+      - name: force push integration test reports to gh-pages branch
+        run: |
+          git add -f docs
+          git commit -m "add common_test reports"
+          git push -f origin HEAD:gh-pages

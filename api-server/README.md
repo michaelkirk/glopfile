@@ -4,7 +4,8 @@ Sendfile relay
 
 ## Development
 
-[Internal API Documentation](https://glopfile.github.io/sendfile/)
+[Internal API Documentation](https://glopfile.github.io/sendfile/)  
+[Integration Test Reports (`common_test`)](https://glopfile.github.io/sendfile/ct/)
 
 ## Building with docker
 
