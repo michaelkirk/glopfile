@@ -3,8 +3,9 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([start/0, stop/0]).
+-export([start/0, stop/0, listen_port/0]).
 -ignore_xref([start/0, stop/0]). % unused, but useful in the shell
+-ignore_xref([listen_port/0]).   % used in tests
 
 %%
 %% API
@@ -38,3 +39,7 @@ start() ->
 stop() ->
     ?LOG_INFO(?MODULE_STRING " stopping on ~p", [node()]),
     ranch:stop_listener(?MODULE).
+
+-spec listen_port() -> inet:port_number() | undefined.
+listen_port() ->
+    ranch:get_port(?MODULE).
