@@ -17,7 +17,7 @@
 -type http_request() :: #http_request{}.
 
 -record(http_response,
-        {status :: 200..600,
+        {status :: 100..600,
          headers :: #{binary() => binary()},
          body :: binary() | json_body()}).
 -type http_response() :: #http_response{}.
