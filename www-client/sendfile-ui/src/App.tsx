@@ -5,7 +5,7 @@ import Downloader from "./Downloader";
 import Uploader from "./Uploader";
 
 class AppState {
-  endpoint = new URL("http://localhost:8080");
+  apiEndpoint = new URL("http://localhost:8080");
 }
 
 class App extends React.Component<{}, AppState> {
@@ -18,9 +18,14 @@ class App extends React.Component<{}, AppState> {
   render(): React.ReactNode {
     let pageBody;
     if (window.location.pathname === "/") {
-      pageBody = <Uploader endpoint={this.state.endpoint} />;
-    } else if (window.location.pathname === "/download") {
-      pageBody = <Downloader location={window.location} />;
+      pageBody = <Uploader apiEndpoint={this.state.apiEndpoint} />;
+    } else if (window.location.pathname.startsWith("/download")) {
+      pageBody = (
+        <Downloader
+          location={window.location}
+          apiEndpoint={this.state.apiEndpoint}
+        />
+      );
     } else {
       pageBody = (
         <div>

@@ -19,14 +19,23 @@ export class SenderClient {
       file.size
     );
     const uploadPath = provisionFileResponse.uploadURL;
-    const downloadURL = this.downloadURLWithoutCipherKey(
-      provisionFileResponse.downloadURL
+    const downloadPath = provisionFileResponse.downloadURL;
+
+    const downloadMatches = downloadPath.match(
+      new RegExp("^/api/v1/download/([^/]+)")
     );
+    if (!downloadMatches) {
+      throw new Error(`1. unable to parse downloadId from ${downloadPath}`);
+    }
+    const downloadId = downloadMatches[1];
+    if (!downloadId) {
+      throw new Error(`2. unable to parse downloadId from ${downloadPath}`);
+    }
 
     return new ProvisionedFile(
       file,
       uploadPath,
-      downloadURL,
+      downloadId,
       this.apiClient.cipherKey
     );
   }
@@ -39,29 +48,23 @@ export class SenderClient {
       provisionedFile.uploadURL
     );
   }
-
-  downloadURLWithoutCipherKey(downloadPath: string): URL {
-    let url: URL = new URL(this.apiClient.endpoint);
-    url.pathname = downloadPath;
-    return url;
-  }
 }
 
 export class ProvisionedFile {
   file: File;
   uploadURL: string;
-  downloadURLWithoutCipherKey: URL;
+  downloadId: string;
   cipherKey: CipherKey;
 
   constructor(
     file: File,
     uploadURL: string,
-    downloadURLWithoutCipherKey: URL,
+    downloadId: string,
     cipherKey: CipherKey
   ) {
     this.file = file;
     this.uploadURL = uploadURL;
-    this.downloadURLWithoutCipherKey = downloadURLWithoutCipherKey;
+    this.downloadId = downloadId;
     this.cipherKey = cipherKey;
   }
 
@@ -71,20 +74,9 @@ export class ProvisionedFile {
     return `cipher_key=${encoded}`;
   }
 
-  async apiDownloadURLWithCipherKey(): Promise<URL> {
-    let url: URL = new URL(this.downloadURLWithoutCipherKey);
-    url.hash = await this.cipherKeyFragment();
-    return url;
-  }
-
-  async webDownloadURLWithCipherKey(): Promise<URL> {
+  async downloadURLWithCipherKey(): Promise<URL> {
     let url = new URL(window.location.toString());
-    url.pathname = "/download";
-    // TODO: encode?
-    url.searchParams.set(
-      "downloadURL",
-      encodeURI(this.downloadURLWithoutCipherKey.toString())
-    );
+    url.pathname = `/download/${this.downloadId}`;
     url.hash = await this.cipherKeyFragment();
     return url;
   }

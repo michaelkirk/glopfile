@@ -6,9 +6,9 @@ import FileUploader from "./FileUploader";
 import FileUpload from "./FileUpload";
 
 class UploaderProps {
-  endpoint: URL;
-  constructor(endpoint: URL) {
-    this.endpoint = endpoint;
+  apiEndpoint: URL;
+  constructor(apiEndpoint: URL) {
+    this.apiEndpoint = apiEndpoint;
   }
 }
 class UploaderState {
@@ -22,7 +22,7 @@ class UploaderState {
 class Uploader extends React.Component<UploaderProps, UploaderState> {
   constructor(props: UploaderProps) {
     super(props);
-    const senderClient = SenderClient.build(props.endpoint);
+    const senderClient = SenderClient.build(props.apiEndpoint);
     this.state = new UploaderState(senderClient);
   }
 
@@ -51,26 +51,13 @@ class Uploader extends React.Component<UploaderProps, UploaderState> {
 
     const fileName = file.name;
     const fileSize = file.size;
-    const apiDownloadURLWithCipherKey =
-      await provisionedFile.apiDownloadURLWithCipherKey();
-    const webDownloadURLWithCipherKey =
-      await provisionedFile.webDownloadURLWithCipherKey();
-    // TODO clean up / hide these details from App
-    // It has to be async because we're exporting cipherkey.
-    // It's a weird dance to have the two links (one for "api" and one for
-    // "web", but that's because the "web" link serves the web client
-    // download app, while the api link serves the actual data used by the
-    // client (be it a rust client or web client).
-    //
-    // Maybe an easier situation would be to have the api server serve the
-    // web-client when requesting the download link with the accepts headers
-    // that look like a browser vs. the actual download data when requesting
-    // from one of the clients, which presumably set something like "accepts json"
+    const downloadURLWithCipherKey =
+      await provisionedFile.downloadURLWithCipherKey();
+
     const fileUpload = new FileUpload(
       fileName,
       fileSize,
-      apiDownloadURLWithCipherKey,
-      webDownloadURLWithCipherKey
+      downloadURLWithCipherKey
     );
     this.setState({ fileUpload });
 

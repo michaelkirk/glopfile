@@ -13,37 +13,14 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
     return (
       <div className="FileUploader">
         <p>Uploading file: {this.fileName()}</p>
-        <h2>via api</h2>
+        <p>Send this download link to the recipient.</p>
         <p>
-          The recipient's client will need the following link to receive your
-          file.
-        </p>
-        <p>
-          {this.apiDownloadURLWithCipherKey()}
+          {this.downloadURLWithCipherKey()}
           <br />[
           <a
-            href="#"
+            href="#copy"
             onClick={(_) =>
-              this.copyToClipboard(this.apiDownloadURLWithCipherKey())
-            }
-          >
-            Copy
-          </a>
-          ]
-        </p>
-
-        <h2>via web</h2>
-        <p>
-          Or the recipient can visit the following link to start a browser based
-          client.
-        </p>
-        <p>
-          {this.webDownloadURLWithCipherKey()}
-          <br />[
-          <a
-            href="#"
-            onClick={(_) =>
-              this.copyToClipboard(this.webDownloadURLWithCipherKey())
+              this.copyToClipboard(this.downloadURLWithCipherKey())
             }
           >
             Copy
@@ -62,12 +39,8 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
     return this.props.fileUpload.fileName;
   }
 
-  apiDownloadURLWithCipherKey(): string {
-    return this.props.fileUpload.apiDownloadURLWithCipherKey.toString();
-  }
-
-  webDownloadURLWithCipherKey(): string {
-    return this.props.fileUpload.webDownloadURLWithCipherKey.toString();
+  downloadURLWithCipherKey(): string {
+    return this.props.fileUpload.downloadURLWithCipherKey.toString();
   }
 }
 

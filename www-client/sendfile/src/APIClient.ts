@@ -46,8 +46,9 @@ export class APIClient {
     });
   }
 
-  async fetchMeta(downloadPath: string): Promise<DownloadMeta> {
+  async fetchMeta(downloadId: string): Promise<DownloadMeta> {
     // TODO: do we need to verify success in js?
+    const downloadPath = `/api/v1/download/${downloadId}`;
     const response = await fetch(this.url(downloadPath));
     const json = await response.json();
 
