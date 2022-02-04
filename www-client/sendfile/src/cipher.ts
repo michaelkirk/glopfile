@@ -1,4 +1,4 @@
-import { base64ToArrayBuffer } from "./base64";
+import Base64 from "./Base64";
 
 export class CipherKey {
   cryptoKey: CryptoKey;
@@ -24,7 +24,7 @@ export class CipherKey {
   }
 
   static async fromSerializedText(serializedText: string): Promise<CipherKey> {
-    let buffer = base64ToArrayBuffer(serializedText);
+    let buffer = Base64.urlSafeDecode(serializedText);
     const cryptoKey = await window.crypto.subtle.importKey(
       "raw",
       buffer,

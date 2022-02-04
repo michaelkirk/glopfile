@@ -1,5 +1,5 @@
 import { CipherKey, ContentCipher } from "./cipher";
-import { arrayBufferToBase64, base64ToArrayBuffer } from "./base64";
+import Base64 from "./Base64";
 
 export class APIClient {
   cipherKey: CipherKey;
@@ -20,7 +20,7 @@ export class APIClient {
     const encryptedFileMeta: ArrayBuffer = await cipher.encrypt(
       fileMeta.serialized()
     );
-    const encoded: string = arrayBufferToBase64(encryptedFileMeta);
+    const encoded: string = Base64.bodyEncode(encryptedFileMeta);
     // 🐍 case
     let bodyContent = `encrypted_metadata=${encodeURIComponent(encoded)}`;
 
@@ -53,8 +53,7 @@ export class APIClient {
     const json = await response.json();
 
     const encryptedContentURL = json.encrypted_content_url;
-    const base64Meta = json.meta;
-    let encryptedFileMeta = base64ToArrayBuffer(base64Meta);
+    let encryptedFileMeta = Base64.bodyDecode(json.meta);
 
     const serialized: ArrayBuffer = await this.cipher().decrypt(
       encryptedFileMeta

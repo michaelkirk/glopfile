@@ -1,6 +1,6 @@
 import { APIClient } from "./APIClient";
 import { CipherKey } from "./cipher";
-import { arrayBufferToBase64 } from "./base64";
+import Base64 from "./Base64";
 
 export class SenderClient {
   apiClient: APIClient;
@@ -59,7 +59,7 @@ export class ProvisionedFile {
 
   async cipherKeyFragment(): Promise<string> {
     const keyBytes = await this.cipherKey.serialized();
-    const encoded = arrayBufferToBase64(keyBytes);
+    const encoded = Base64.urlSafeEncode(keyBytes);
     return `cipher_key=${encoded}`;
   }
 
