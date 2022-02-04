@@ -2,6 +2,7 @@ use aes_gcm::aead::{Aead, NewAead};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use zeroize::ZeroizeOnDrop;
 
+use crate::url_safe_base64;
 use crate::{Error, Result};
 
 #[derive(ZeroizeOnDrop, Clone)]
@@ -32,8 +33,8 @@ impl CipherKey {
         &self.bytes
     }
 
-    pub fn from_string(serialized_text: &str) -> Result<Self> {
-        let bytes = base64::decode(serialized_text)
+    pub fn from_string(url_safe_base64: &str) -> Result<Self> {
+        let bytes = url_safe_base64::decode(url_safe_base64)
             .map_err(|_| Error::InvalidInput("invalid base64 encoding for cipher key"))?;
 
         let byte_array: [u8; 32] = bytes
@@ -44,7 +45,7 @@ impl CipherKey {
     }
 
     pub fn serialized(&self) -> String {
-        base64::encode(self.bytes())
+        url_safe_base64::encode(self.bytes())
     }
 }
 

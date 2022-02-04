@@ -123,7 +123,7 @@ mod tests {
             };
             assert_eq!(
                 p.formatted_download_url_and_key(),
-                "https://123.invalid:1234/their/download/456#cipher_key=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
+                "https://123.invalid:1234/their/download/456#cipher_key=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE~"
             )
         }
 

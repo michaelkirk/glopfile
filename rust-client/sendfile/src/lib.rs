@@ -6,6 +6,7 @@ mod cipher;
 mod error;
 mod receiver_client;
 mod sender_client;
+mod url_safe_base64;
 
 pub use api_client::DownloadId;
 pub use error::Error;
