@@ -194,8 +194,6 @@ impl std::fmt::Display for DownloadId {
 
 impl DownloadId {
     pub fn new(id: String) -> Self {
-        // TODO better verification?
-        // assert!(id.contains("/"));
         assert!(
             !id.contains("/"),
             "'id' looks like a path: {}. Improperly parsed?",
@@ -208,7 +206,7 @@ impl DownloadId {
 #[derive(Debug, Deserialize)]
 pub(crate) struct ProvisionFileResponse {
     pub(crate) upload_url: String,
-    pub(crate) download_url: String,
+    pub(crate) download_id: String,
 }
 
 #[derive(Debug)]

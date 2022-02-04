@@ -37,21 +37,7 @@ impl SenderClient {
             .api_client
             .provision_file(file_name.to_string_lossy().to_string(), file_size)?;
 
-        let download_id_str = provision_response
-            .download_url
-            .strip_prefix("/api/v1/download/")
-            .ok_or_else(|| {
-                error!(
-                    "api response was missing the expected download prefix. download_url: {}",
-                    provision_response.download_url
-                );
-                Error::InvalidServerResponse(
-                    "api response was missing the expected download prefix.",
-                )
-            })?;
-
-        let download_id = DownloadId::new(download_id_str.to_string());
-
+        let download_id = DownloadId::new(provision_response.download_id);
         let download_url_without_cipher_key = self.download_url_without_cipher_key(&download_id);
 
         // If the server ever changes to return non-relative URL's we'll have to change this logic
