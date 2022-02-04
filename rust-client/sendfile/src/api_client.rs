@@ -29,10 +29,6 @@ impl ApiClient {
         &self.cipher_key
     }
 
-    pub(crate) fn endpoint(&self) -> &Url {
-        &self.endpoint
-    }
-
     pub fn provision_file(
         &self,
         file_name: String,
@@ -69,8 +65,8 @@ impl ApiClient {
         Ok(provision_file_response)
     }
 
-    pub fn upload_file(&self, mut file: File, upload_url: &str) -> Result<()> {
-        let url = self.endpoint.join(upload_url).expect("bad endpoint?");
+    pub fn upload_file(&self, mut file: File, upload_path: &str) -> Result<()> {
+        let url = self.endpoint.join(&upload_path).expect("bad endpoint?");
 
         let mut plaintext = vec![];
         let _plaintext_len = file.read_to_end(&mut plaintext);
@@ -103,8 +99,9 @@ impl ApiClient {
         Ok(())
     }
 
-    pub fn fetch_meta(&self, download_path: &str) -> Result<DownloadMeta> {
-        let url = self.endpoint.join(download_path).expect("bad endpoint?");
+    pub fn fetch_meta(&self, download_id: &DownloadId) -> Result<DownloadMeta> {
+        let download_path = format!("/api/v1/download/{}", download_id);
+        let url = self.endpoint.join(&download_path).expect("bad endpoint?");
 
         let response = self.http_client().get(url).send()?;
 
@@ -183,6 +180,28 @@ impl ApiClient {
         self.http_client_builder()
             .build()
             .expect("invalid default http client config")
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DownloadId(String);
+
+impl std::fmt::Display for DownloadId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl DownloadId {
+    pub fn new(id: String) -> Self {
+        // TODO better verification?
+        // assert!(id.contains("/"));
+        assert!(
+            !id.contains("/"),
+            "'id' looks like a path: {}. Improperly parsed?",
+            id
+        );
+        Self(id)
     }
 }
 

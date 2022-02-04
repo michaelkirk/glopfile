@@ -7,6 +7,7 @@ mod error;
 mod receiver_client;
 mod sender_client;
 
+pub use api_client::DownloadId;
 pub use error::Error;
 pub use receiver_client::ReceiverClient;
 pub use sender_client::SenderClient;
@@ -47,7 +48,7 @@ mod tests {
             debug!("sender did upload");
         });
 
-        let mut receiver = ReceiverClient::from_download_url(&download_url).unwrap();
+        let mut receiver = ReceiverClient::from_testing_download_url(&download_url).unwrap();
         receiver.set_output_dir(&std::env::temp_dir());
         debug!("receiver will download");
         receiver.download().unwrap();

@@ -21,9 +21,13 @@ enum Commands {
         /// file you want to send
         path: PathBuf,
 
-        /// non-default endpoint to coordinate file transfer
+        /// The API service used to coordinate file transfer. If unspecified, a default will be used.
         #[clap(short, long)]
-        endpoint: Option<Url>,
+        api_endpoint: Option<Url>,
+
+        /// The base of the generated download link. If unspecified, a default will be used.
+        #[clap(short, long)]
+        download_endpoint: Option<Url>,
     },
 
     /// Downloads a file being sent by another user
@@ -31,6 +35,10 @@ enum Commands {
     Receive {
         /// The link provided to you by the sender
         download_link: String,
+
+        /// The API service used to coordinate file transfer. If unspecified, a default will be used.
+        #[clap(short, long)]
+        api_endpoint: Option<Url>,
     },
 }
 
@@ -39,19 +47,36 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match &args.command {
-        Commands::Send { path, endpoint } => Cli::send(path, endpoint.as_ref()),
-        Commands::Receive { download_link } => Cli::receive(download_link),
+        Commands::Send {
+            path,
+            api_endpoint,
+            download_endpoint,
+        } => Cli::send(path, api_endpoint.as_ref(), download_endpoint.as_ref()),
+        Commands::Receive {
+            download_link,
+            api_endpoint,
+        } => Cli::receive(download_link, api_endpoint.as_ref()),
     }
 }
 
 struct Cli;
 impl Cli {
-    fn send(path: &Path, endpoint: Option<&Url>) -> Result<()> {
-        let default_endpoint =
+    fn send(
+        path: &Path,
+        api_endpoint: Option<&Url>,
+        download_endpoint: Option<&Url>,
+    ) -> Result<()> {
+        let default_api_endpoint =
             Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
-        let endpoint = endpoint.unwrap_or(&default_endpoint).clone();
+        let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
-        let send_client = SenderClient::new(endpoint);
+        let default_download_endpoint =
+            Url::parse("http://localhost:3000").expect("invalid hardcoded endpoint");
+        let download_endpoint = download_endpoint
+            .unwrap_or(&default_download_endpoint)
+            .clone();
+
+        let send_client = SenderClient::new(api_endpoint, download_endpoint);
 
         let provisioned_file = send_client.provision_file(path)?;
 
@@ -64,8 +89,12 @@ impl Cli {
         Ok(())
     }
 
-    fn receive(download_url: &str) -> Result<()> {
-        let receiver_client = ReceiverClient::from_download_url(download_url)?;
+    fn receive(download_url: &str, api_endpoint: Option<&Url>) -> Result<()> {
+        let default_api_endpoint =
+            Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
+        let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
+
+        let receiver_client = ReceiverClient::from_download_url(download_url, api_endpoint)?;
         receiver_client.download()?;
         println!("Downloaded file.");
 
