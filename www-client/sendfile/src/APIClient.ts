@@ -31,7 +31,7 @@ export class APIClient {
 
     const json = await response.json();
     // 🐍 case
-    return new ProvisionFileResponse(json.download_url, json.upload_url);
+    return new ProvisionFileResponse(json.download_id, json.upload_url);
   }
 
   async uploadFile(file: File, uploadPath: string): Promise<Response> {
@@ -143,18 +143,18 @@ class FileMeta {
 }
 
 export class ProvisionFileResponse {
-  downloadURL: string;
+  downloadId: string;
   uploadURL: string;
 
-  constructor(downloadURL: string, uploadURL: string) {
-    if (!downloadURL) {
-      throw new Error("Missing downloadURL");
+  constructor(downloadId: string, uploadURL: string) {
+    if (!downloadId) {
+      throw new Error("Missing downloadId");
     }
     if (!uploadURL) {
       throw new Error("Missing uploadURL");
     }
 
-    this.downloadURL = downloadURL;
+    this.downloadId = downloadId;
     this.uploadURL = uploadURL;
   }
 }

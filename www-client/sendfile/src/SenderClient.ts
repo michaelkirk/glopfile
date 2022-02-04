@@ -19,18 +19,7 @@ export class SenderClient {
       file.size
     );
     const uploadPath = provisionFileResponse.uploadURL;
-    const downloadPath = provisionFileResponse.downloadURL;
-
-    const downloadMatches = downloadPath.match(
-      new RegExp("^/api/v1/download/([^/]+)")
-    );
-    if (!downloadMatches) {
-      throw new Error(`1. unable to parse downloadId from ${downloadPath}`);
-    }
-    const downloadId = downloadMatches[1];
-    if (!downloadId) {
-      throw new Error(`2. unable to parse downloadId from ${downloadPath}`);
-    }
+    const downloadId = provisionFileResponse.downloadId;
 
     return new ProvisionedFile(
       file,
