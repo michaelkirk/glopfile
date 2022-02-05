@@ -3,15 +3,17 @@ extern crate log;
 
 mod api_client;
 mod cipher;
+mod downloader_client;
 mod error;
-mod receiver_client;
-mod sender_client;
+mod p2p;
+mod uploader_client;
 mod url_safe_base64;
+mod websocket;
 
 pub use api_client::DownloadId;
+pub use downloader_client::DownloaderClient;
 pub use error::Error;
-pub use receiver_client::ReceiverClient;
-pub use sender_client::SenderClient;
+pub use uploader_client::{ProvisionedFile, UploaderClient};
 
 use api_client::ApiClient;
 use cipher::CipherKey;
@@ -30,31 +32,78 @@ fn init_test_logging() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::{fs, path::Path, time::Duration};
+
+    const TEST_FIXTURES_DIR: &str = "test_fixtures/";
+    const SAMPLE_FILE_NAME: &str = "sample_file.txt";
 
     #[test]
     fn round_trip() {
         init_test_logging();
 
-        let sender = SenderClient::new_testing();
-        let path = PathBuf::from("test_fixtures/sample_file.txt");
-        let provisioned_file = sender.provision_file(&path).unwrap();
+        let uploader = UploaderClient::new_testing();
+        let path = Path::new(TEST_FIXTURES_DIR).join(SAMPLE_FILE_NAME);
+        let provisioned_file = uploader.provision_file(&path).unwrap();
 
         let download_url = provisioned_file.formatted_download_url_and_key();
 
         // uploading is a blocking operation, so spawn it on separate thread
-        let sender_handler = std::thread::spawn(move || {
-            debug!("sender will upload");
-            sender.upload_provisioned_file(provisioned_file).unwrap();
-            debug!("sender did upload");
+        let uploader_handler = std::thread::spawn(move || {
+            debug!("uploader will upload");
+            uploader.upload_provisioned_file(provisioned_file).unwrap();
+            debug!("uploader did upload");
         });
 
-        let mut receiver = ReceiverClient::from_testing_download_url(&download_url).unwrap();
-        receiver.set_output_dir(&std::env::temp_dir());
-        debug!("receiver will download");
-        receiver.download().unwrap();
-        debug!("receiver did download");
+        let mut downloader = DownloaderClient::from_testing_download_url(&download_url).unwrap();
+        let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
+        downloader.set_output_dir(&output_dir);
+        debug!("downloader will download");
+        downloader.download_relayed().unwrap();
+        debug!("downloader did download");
 
-        sender_handler.join().unwrap();
+        uploader_handler.join().unwrap();
+
+        assert_eq!(
+            fs::read(output_dir.join(SAMPLE_FILE_NAME)).unwrap(),
+            fs::read(path).unwrap()
+        );
+
+        let _ignore = fs::remove_dir_all(output_dir);
+    }
+
+    #[test]
+    fn round_trip_p2p() {
+        init_test_logging();
+
+        let uploader = UploaderClient::new_testing();
+        let path = Path::new(TEST_FIXTURES_DIR).join(SAMPLE_FILE_NAME);
+        let provisioned_file = uploader.provision_file(&path).unwrap();
+
+        let download_url = provisioned_file.formatted_download_url_and_key();
+
+        // uploading is a blocking operation, so spawn it on separate thread
+        let uploader_handler = std::thread::spawn(move || {
+            debug!("uploader will upload");
+            uploader.upload_provisioned_file(provisioned_file).unwrap();
+            debug!("uploader did upload");
+        });
+
+        let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
+        let mut downloader = DownloaderClient::from_testing_download_url(&download_url).unwrap();
+        downloader.set_output_dir(&output_dir);
+        debug!("downloader will download");
+        downloader
+            .download_p2p(Some(Duration::from_secs(15)))
+            .unwrap();
+        debug!("downloader did download");
+
+        uploader_handler.join().unwrap();
+
+        assert_eq!(
+            fs::read(output_dir.join("sample_file.txt")).unwrap(),
+            fs::read(path).unwrap()
+        );
+
+        let _ignore = fs::remove_dir_all(output_dir);
     }
 }

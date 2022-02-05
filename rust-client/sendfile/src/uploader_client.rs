@@ -1,22 +1,30 @@
 use std::fs::File;
+use std::ops::ControlFlow::{self, Break, Continue};
 use std::path::Path;
+use std::thread;
 
+use bytes::BytesMut;
+use prost::Message;
 use url::Url;
 
+use crate::api_client::EncryptedFile;
+use crate::p2p::protocol::{
+    downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
+    TransferFinished,
+};
+use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
+use crate::websocket::web_socket_message;
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result};
 
-pub struct SenderClient {
+pub struct UploaderClient {
     api_client: ApiClient,
     download_endpoint: Url,
 }
 
-impl SenderClient {
+impl UploaderClient {
     pub fn new(api_endpoint: Url, download_endpoint: Url) -> Self {
         let api_client = ApiClient::new(api_endpoint, CipherKey::random());
-        Self {
-            api_client,
-            download_endpoint,
-        }
+        Self { api_client, download_endpoint }
     }
 
     pub fn new_testing() -> Self {
@@ -61,8 +69,28 @@ impl SenderClient {
     }
 
     pub fn upload_provisioned_file(&self, provisioned_file: ProvisionedFile) -> Result<()> {
+        let encrypted_file = self.api_client.encrypt_file(provisioned_file.file);
+        let mut p2p_client = PeerToPeerClient::new()?;
+        let signaling_message_handler = p2p_client.signaling_message_handler();
+        let websocket = self.api_client.connect_upload_websocket(
+            &provisioned_file.upload_path,
+            move |message| match message.inner {
+                Some(web_socket_message::Inner::RtcSignaling(message)) => signaling_message_handler
+                    .handle(message)
+                    .map(Continue)
+                    .unwrap_or(Break(())),
+                None => {
+                    // Unfortunately, with prost there's no way to log about what message type this actually was.
+                    warn!("unhandled websocket message type");
+                    Continue(())
+                }
+            },
+        )?;
+        let mut state = UploadState { encrypted_file: encrypted_file.clone() };
+        p2p_client.set_websocket(websocket)?;
+        thread::spawn(move || p2p_client.transfer(&mut state, None).unwrap());
         self.api_client
-            .upload_file(provisioned_file.file, &provisioned_file.upload_path)
+            .upload_file(encrypted_file, &provisioned_file.upload_path)
     }
 }
 
@@ -85,18 +113,53 @@ impl ProvisionedFile {
     }
 }
 
+struct UploadState {
+    encrypted_file: EncryptedFile,
+}
+
+impl PeerToPeerClientHandler for UploadState {
+    fn data_channel_message(
+        &mut self,
+        client: &mut PeerToPeerClient,
+        message_data: BytesMut,
+    ) -> Result<ControlFlow<()>> {
+        let Self { encrypted_file } = self;
+        let message = DownloaderMessage::decode(message_data).map_err(Error::rtc_err)?;
+        match message.inner {
+            Some(downloader_message::Inner::DataRequest(DataRequest { offset, len })) => {
+                debug!("received RTC DataRequest from downloader for offset {offset} len {len}");
+                let len = usize::try_from(len).expect("file fits in memory");
+                let data = encrypted_file.read_at_exact(offset, len);
+                client.send_uploader_message(uploader_message::Inner::DataResponse(
+                    DataResponse { data, offset },
+                ))?;
+                Ok(Continue(()))
+            }
+            Some(downloader_message::Inner::TransferFinished(TransferFinished {})) => {
+                debug!("outgoing RTC transfer finished");
+                Ok(Break(()))
+            }
+            None => {
+                // Unfortunately, with prost there's no way to log about what message type this actually was.
+                warn!("unhandled RTC data channel message type from downloader");
+                Ok(Continue(()))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::init_test_logging;
+    use crate::uploader_client::*;
 
     #[test]
     fn test_download_url() {
         init_test_logging();
 
-        let sender_client = SenderClient::new_testing();
+        let uploader_client = UploaderClient::new_testing();
         let download_id = DownloadId::new("abc123".to_string());
-        let url = sender_client.download_url_without_cipher_key(&download_id);
+        let url = uploader_client.download_url_without_cipher_key(&download_id);
         assert_eq!(
             url,
             Url::parse("http://localhost:3000/download/abc123").unwrap()
@@ -128,13 +191,13 @@ mod tests {
         }
 
         #[test]
-        fn send_non_existent_file() {
+        fn upload_non_existent_file() {
             init_test_logging();
 
-            let sender = SenderClient::new_testing();
+            let uploader = UploaderClient::new_testing();
             let path = PathBuf::from("path/to/non-existent-file");
             assert!(matches!(
-                sender.provision_file(&path),
+                uploader.provision_file(&path),
                 Err(Error::IO { .. }),
             ));
         }

@@ -1,11 +1,15 @@
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::cipher::{CipherKey, ContentCipher};
+use crate::websocket::{WebSocketConnection, WebSocketMessage};
 use crate::{Error, Result};
 
 // should this be configurable, or infinite even?
@@ -18,10 +22,7 @@ pub(crate) struct ApiClient {
 
 impl ApiClient {
     pub fn new(endpoint: Url, cipher_key: CipherKey) -> Self {
-        Self {
-            cipher_key,
-            endpoint,
-        }
+        Self { cipher_key, endpoint }
     }
 
     fn cipher(&self) -> ContentCipher {
@@ -39,10 +40,7 @@ impl ApiClient {
     ) -> Result<ProvisionFileResponse> {
         let url = self.endpoint.join("/api/v1/files").expect("bad endpoint?");
 
-        let file_meta = FileMeta {
-            file_name,
-            file_size,
-        };
+        let file_meta = FileMeta { file_name, file_size };
         let metadata_json = serde_json::to_string(&file_meta)
             .map_err(|_| Error::InvalidInput("unserializable upload"))?;
         let encrypted_metadata = self.cipher().encrypt(metadata_json.as_bytes());
@@ -68,9 +66,7 @@ impl ApiClient {
         Ok(provision_file_response)
     }
 
-    pub fn upload_file(&self, mut file: File, upload_path: &str) -> Result<()> {
-        let url = self.endpoint.join(&upload_path).expect("bad endpoint?");
-
+    pub fn encrypt_file(&self, mut file: File) -> EncryptedFile {
         let mut plaintext = vec![];
         let _plaintext_len = file.read_to_end(&mut plaintext);
         // TODO - verify length matches that in metadata
@@ -78,6 +74,11 @@ impl ApiClient {
 
         // TODO stream
         let encrypted_bytes = ContentCipher::new(&self.cipher_key).encrypt(&plaintext);
+        EncryptedFile { encrypted_bytes: encrypted_bytes.into() }
+    }
+
+    pub fn upload_file(&self, file: EncryptedFile, upload_path: &str) -> Result<()> {
+        let url = self.endpoint.join(upload_path).expect("bad endpoint?");
 
         let response = self
             .http_client_builder()
@@ -85,7 +86,7 @@ impl ApiClient {
             .build()
             .expect("invalid timeout for http client?")
             .post(url)
-            .body(encrypted_bytes)
+            .body(file.encrypted_bytes)
             .send()?;
 
         if !response.status().is_success() {
@@ -128,10 +129,18 @@ impl ApiClient {
         })
     }
 
-    pub fn download_content(
+    pub fn decrypted_file(
         &self,
         download_meta: &DownloadMeta,
         output_dir: Option<&Path>,
+    ) -> DecryptedFile<'_> {
+        DecryptedFile::new(self, download_meta, output_dir)
+    }
+
+    pub fn download_content(
+        &self,
+        download_meta: &DownloadMeta,
+        mut decrypted_file: DecryptedFile,
     ) -> Result<()> {
         let content_url = self
             .endpoint
@@ -155,27 +164,79 @@ impl ApiClient {
             debug!("fetched content successfully");
         }
 
-        use std::io::Write;
-
-        // TODO: stream rather
-        let mut ciphertext = vec![];
-        {
-            let mut ciphertext_writer = std::io::BufWriter::new(&mut ciphertext);
-            ciphertext_writer.write_all(&response.bytes()?)?;
-        }
-        let plaintext = self.cipher().decrypt(&ciphertext)?;
-
-        let output_path: PathBuf = if let Some(output_dir) = output_dir {
-            Path::join(output_dir, &download_meta.file_meta.file_name)
-        } else {
-            PathBuf::from(&download_meta.file_meta.file_name)
-        };
-
-        let file = File::create(output_path)?;
-        let mut writer = std::io::BufWriter::new(file);
-        writer.write_all(&plaintext)?;
+        use io::Write;
+        decrypted_file.write_all(&response.bytes()?)?;
+        decrypted_file.flush()?;
 
         Ok(())
+    }
+
+    pub fn finish_download(&self, download_meta: &DownloadMeta) -> Result<()> {
+        // Finishing a download through the relay currently just means sending a ranged download
+        // request where the requested offset is the end of the file. This essentially tells the
+        // server that we have downloaded the entirety of the data.
+
+        let content_url = self
+            .endpoint
+            .join(&download_meta.encrypted_content_url)
+            .map_err(|_| Error::InvalidInput("bad content url"))?;
+        let content_size = download_meta.file_meta.file_size;
+
+        let request = self.http_client().get(content_url);
+        let request = request.header("Content-Range", format!("bytes {content_size}-/*"));
+
+        let response = request.send()?;
+        if !response.status().is_success() {
+            return Err(Error::ClientHttpErrorResponse {
+                message: "failed to finish download",
+                status: response.status().as_u16(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub fn connect_download_websocket(
+        &self,
+        encrypted_content_url: &str,
+        handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
+    ) -> Result<WebSocketConnection> {
+        let websocket_url = {
+            let mut content_url = self
+                .endpoint
+                .join(encrypted_content_url)
+                .map_err(|_| Error::InvalidInput("bad content url"))?;
+            content_url
+                .path_segments_mut()
+                .map_err(|_| Error::InvalidInput("bad content url"))?
+                .pop()
+                .push("ws");
+            content_url.set_scheme("ws").expect("bad scheme?");
+            content_url
+        };
+        let websocket = WebSocketConnection::connect(websocket_url, handle_incoming_message)?;
+        Ok(websocket)
+    }
+
+    pub fn connect_upload_websocket(
+        &self,
+        upload_path: &str,
+        handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
+    ) -> Result<WebSocketConnection> {
+        let websocket_url = {
+            let mut upload_url = self
+                .endpoint
+                .join(upload_path)
+                .map_err(|_| Error::InvalidInput("bad upload path"))?;
+            upload_url
+                .path_segments_mut()
+                .map_err(|_| Error::InvalidInput("bad upload path"))?
+                .push("ws");
+            upload_url.set_scheme("ws").expect("bad scheme?");
+            upload_url
+        };
+        let websocket = WebSocketConnection::connect(websocket_url, handle_incoming_message)?;
+        Ok(websocket)
     }
 
     fn http_client_builder(&self) -> reqwest::blocking::ClientBuilder {
@@ -235,5 +296,105 @@ impl FileMeta {
             error!("invalid json string: {}", &string);
             Error::InvalidInput("Invalid json in FileMeta serialization")
         })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct EncryptedFile {
+    encrypted_bytes: Bytes,
+}
+
+impl EncryptedFile {
+    pub(crate) fn read_at_exact(&self, offset: u64, len: usize) -> Bytes {
+        let offset = usize::try_from(offset).expect("file fits in memory");
+        self.encrypted_bytes
+            .slice(offset..offset.saturating_add(len))
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct DecryptedFile<'a> {
+    api_client: &'a ApiClient,
+    output_path: PathBuf,
+    file_size: u64,
+    shared: Arc<Mutex<DecryptedFileShared>>,
+}
+
+struct DecryptedFileShared {
+    data: Vec<u8>,
+    completely_written: bool,
+}
+
+impl<'a> DecryptedFile<'a> {
+    fn new(
+        api_client: &'a ApiClient,
+        download_meta: &DownloadMeta,
+        output_dir: Option<&Path>,
+    ) -> Self {
+        let output_path: PathBuf = if let Some(output_dir) = output_dir {
+            Path::join(output_dir, &download_meta.file_meta.file_name)
+        } else {
+            PathBuf::from(&download_meta.file_meta.file_name)
+        };
+        let data_len =
+            usize::try_from(download_meta.file_meta.file_size).expect("file fits in memory");
+        Self {
+            api_client,
+            output_path,
+            file_size: download_meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
+            shared: Arc::new(Mutex::new(DecryptedFileShared {
+                data: Vec::with_capacity(data_len),
+                completely_written: false,
+            })),
+        }
+    }
+}
+
+impl<'a> io::Write for DecryptedFile<'a> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // TODO: stream rather
+        let mut shared = self.shared.lock().unwrap();
+        shared.data.extend(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let file_size = usize::try_from(self.file_size).expect("file fits in memory");
+
+        let mut shared = self.shared.lock().unwrap();
+
+        if shared.completely_written {
+            return Ok(());
+        }
+
+        if shared.data.len() != file_size {
+            // It isn't great to return success here and silently ignore the fact that we weren't able to flush
+            // anything, but we should have streaming encryption soon and this won't happen then.
+            return Ok(());
+        }
+
+        let plaintext = self
+            .api_client
+            .cipher()
+            .decrypt(&shared.data)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+
+        let file = File::create(&self.output_path)?;
+        let mut writer = std::io::BufWriter::new(file);
+        writer.write_all(&plaintext)?;
+
+        shared.completely_written = true;
+
+        Ok(())
+    }
+}
+
+impl<'a> Drop for DecryptedFile<'a> {
+    fn drop(&mut self) {
+        use io::Write;
+        match self.flush() {
+            Ok(()) => (),
+            Err(error) => warn!("error writing decrypted file to disk: {error}"),
+        }
     }
 }

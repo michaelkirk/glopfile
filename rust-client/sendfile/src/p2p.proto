@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package sendfile.p2p.protocol;
+
+message UploaderMessage {
+  oneof inner {
+    DataResponse data_response = 1;
+  }
+}
+
+message DownloaderMessage {
+  oneof inner {
+    DataRequest data_request = 1;
+    TransferFinished transfer_finished = 2;
+  }
+}
+
+message DataRequest {
+  uint64 offset = 1;
+  uint64 len = 2;
+}
+
+message DataResponse {
+  uint64 offset = 1;
+  bytes data = 2;
+}
+
+message TransferFinished {
+}

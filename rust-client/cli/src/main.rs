@@ -1,8 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Result;
 use clap::{AppSettings, Parser, Subcommand};
-use sendfile::{ReceiverClient, SenderClient};
+use sendfile::{DownloaderClient, UploaderClient};
 use url::Url;
 
 #[derive(Parser)]
@@ -47,15 +48,12 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match &args.command {
-        Commands::Send {
-            path,
-            api_endpoint,
-            download_endpoint,
-        } => Cli::send(path, api_endpoint.as_ref(), download_endpoint.as_ref()),
-        Commands::Receive {
-            download_link,
-            api_endpoint,
-        } => Cli::receive(download_link, api_endpoint.as_ref()),
+        Commands::Send { path, api_endpoint, download_endpoint } => {
+            Cli::send(path, api_endpoint.as_ref(), download_endpoint.as_ref())
+        }
+        Commands::Receive { download_link, api_endpoint } => {
+            Cli::receive(download_link, api_endpoint.as_ref())
+        }
     }
 }
 
@@ -76,7 +74,7 @@ impl Cli {
             .unwrap_or(&default_download_endpoint)
             .clone();
 
-        let send_client = SenderClient::new(api_endpoint, download_endpoint);
+        let send_client = UploaderClient::new(api_endpoint, download_endpoint);
 
         let provisioned_file = send_client.provision_file(path)?;
 
@@ -94,8 +92,8 @@ impl Cli {
             Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
-        let receiver_client = ReceiverClient::from_download_url(download_url, api_endpoint)?;
-        receiver_client.download()?;
+        let downloader_client = DownloaderClient::from_download_url(download_url, api_endpoint)?;
+        downloader_client.download(Some(Duration::from_secs(5)))?;
         println!("Downloaded file.");
 
         Ok(())

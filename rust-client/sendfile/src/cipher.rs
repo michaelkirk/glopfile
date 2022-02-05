@@ -20,9 +20,7 @@ impl std::fmt::Debug for CipherKey {
 
 impl CipherKey {
     pub fn random() -> Self {
-        Self {
-            bytes: rand::random(),
-        }
+        Self { bytes: rand::random() }
     }
 
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
@@ -55,6 +53,11 @@ pub(crate) struct ContentCipher<'a> {
 impl<'a> ContentCipher<'a> {
     pub fn new(cipher_key: &'a CipherKey) -> Self {
         Self { cipher_key }
+    }
+
+    pub const fn extra_ciphertext_len() -> u64 {
+        // TODO somehow use constants from aes_gcm here
+        12 + 16
     }
 
     fn cipher(&self) -> Aes256Gcm {
