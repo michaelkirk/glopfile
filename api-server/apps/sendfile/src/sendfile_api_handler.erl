@@ -162,8 +162,8 @@ handle_files(#{method := <<"POST">>}=Req) ->
             {ok, _Pid, Id} = sendfile_session:start(Metadata),
             EncodedId = encode_id(Id),
             ResponseMap =
-                #{upload_url   => <<"/api/v1/upload/", EncodedId/binary>>,
-                  download_url => <<"/api/v1/download/", EncodedId/binary>>},
+                #{upload_url => <<"/api/v1/upload/", EncodedId/binary>>,
+                  download_id => <<EncodedId/binary>>},
             {ok, jsone:encode(ResponseMap), BodyReadReq};
         _ ->
             {invalid, metadata_missing}

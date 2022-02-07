@@ -47,7 +47,7 @@ upload(Config) ->
     #http_response{
        status = 200,
        body = #json_body{object = #{<<"upload_url">> := <<?UPLOAD_PATH "/", _/binary>>,
-                                    <<"download_url">> := <<?DOWNLOAD_PATH "/", _/binary>>}}
+                                    <<"download_id">> := <<_/binary>>}}
       } = http(post, Config, #http_request{path = ?PROVISION_UPLOAD_PATH, body = #form_body{data = #{encrypted_metadata => ?METADATA}}}),
     ok.
 
@@ -78,10 +78,10 @@ invalid_method_download(Config) ->
 
     #http_response{
        status = 200,
-       body = #json_body{object = #{<<"download_url">> := ProvisionDownloadUrl}}
+       body = #json_body{object = #{<<"download_id">> := DownloadId}}
       } = http(post, Config, #http_request{path = ?PROVISION_UPLOAD_PATH, body = #form_body{data = #{encrypted_metadata => ?METADATA}}}),
 
-    #http_response{status = 405} = http(post, Config, #http_request{path = ProvisionDownloadUrl, body = <<>>}),
+    #http_response{status = 405} = http(post, Config, #http_request{path = <<?DOWNLOAD_PATH, "/", DownloadId/binary>>, body = <<>>}),
 
     ok.
 
@@ -90,13 +90,13 @@ download(Config) ->
 
     #http_response{
        status = 200,
-       body = #json_body{object = #{<<"download_url">> := ProvisionDownloadUrl}}
+       body = #json_body{object = #{<<"download_id">> := DownloadId}}
       } = http(post, Config, #http_request{path = ?PROVISION_UPLOAD_PATH, body = #form_body{data = #{encrypted_metadata => ?METADATA}}}),
 
     #http_response{
        status = 200,
        body = #json_body{object = #{<<"meta">> := ?METADATA}}
-      } = http(get, Config, #http_request{path = ProvisionDownloadUrl}),
+      } = http(get, Config, #http_request{path = <<?DOWNLOAD_PATH, "/", DownloadId/binary>>}),
 
     ok.
 
@@ -115,13 +115,13 @@ transfer(Config) ->
 
     #http_response{
        status = 200,
-       body = #json_body{object = #{<<"download_url">> := ProvisionDownloadUrl, <<"upload_url">> := UploadContentUrl}}
+       body = #json_body{object = #{<<"download_id">> := DownloadId, <<"upload_url">> := UploadContentUrl}}
       } = http(post, Config, #http_request{path = ?PROVISION_UPLOAD_PATH, body = #form_body{data = #{encrypted_metadata => ?METADATA}}}),
 
     #http_response{
        status = 200,
        body = #json_body{object = #{<<"meta">> := ?METADATA, <<"encrypted_content_url">> := DownloadContentUrl}}
-      } = http(get, Config, #http_request{path = ProvisionDownloadUrl}),
+      } = http(get, Config, #http_request{path = <<?DOWNLOAD_PATH, "/", DownloadId/binary>>}),
 
     Self = self(),
     spawn_link(fun () -> Self ! http(get, Config, #http_request{path = DownloadContentUrl}) end),
