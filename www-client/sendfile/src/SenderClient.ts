@@ -30,11 +30,13 @@ export class SenderClient {
   }
 
   async uploadProvisionedFile(
-    provisionedFile: ProvisionedFile
-  ): Promise<Response> {
+    provisionedFile: ProvisionedFile,
+    progressHandler: (complete: number, total: number) => void
+  ): Promise<void> {
     return this.apiClient.uploadFile(
       provisionedFile.file,
-      provisionedFile.uploadURL
+      provisionedFile.uploadURL,
+      progressHandler
     );
   }
 }

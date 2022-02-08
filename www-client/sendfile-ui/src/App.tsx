@@ -59,9 +59,17 @@ class NavLinkProps {
     this.text = text;
   }
 }
+
 class NavLink extends React.Component<NavLinkProps, {}> {
   render(): React.ReactElement {
-    if (window.location.pathname === this.props.path) {
+    let isCurrentPage: boolean;
+    if (this.props.path === "/") {
+      isCurrentPage = window.location.pathname === "/";
+    } else {
+      isCurrentPage = window.location.pathname.startsWith(this.props.path);
+    }
+
+    if (isCurrentPage) {
       return <b>{this.props.text}</b>;
     } else {
       return <a href={this.props.path}>{this.props.text}</a>;

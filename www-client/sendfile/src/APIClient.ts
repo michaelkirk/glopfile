@@ -34,16 +34,37 @@ export class APIClient {
     return new ProvisionFileResponse(json.download_id, json.upload_url);
   }
 
-  async uploadFile(file: File, uploadPath: string): Promise<Response> {
+  async uploadFile(
+    file: File,
+    uploadPath: string,
+    progressHandler: (complete: number, total: number) => void
+  ): Promise<void> {
     // TODO stream
     const plaintext = await file.arrayBuffer();
     const cipher = new ContentCipher(this.cipherKey);
     const body = await cipher.encrypt(plaintext);
 
-    return fetch(this.url(uploadPath), {
-      method: "POST",
-      body,
+    let promise = new Promise<void>((resolve, _reject) => {
+      let xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener(
+        "progress",
+        (e) => {
+          progressHandler(e.loaded, e.total);
+        },
+        false
+      );
+
+      xhr.onreadystatechange = (_) => {
+        if (xhr.readyState == 4) {
+          resolve();
+        }
+      };
+
+      xhr.open("post", this.url(uploadPath), true);
+      xhr.send(body);
     });
+
+    return promise;
   }
 
   async fetchMeta(downloadId: string): Promise<DownloadMeta> {
@@ -63,11 +84,43 @@ export class APIClient {
     return result;
   }
 
-  async downloadContent(downloadMeta: DownloadMeta): Promise<void> {
+  async downloadContent(
+    downloadMeta: DownloadMeta,
+    progressHandler: (completed: number, total: number) => void
+  ): Promise<void> {
     const contentURL = this.url(downloadMeta.encryptedContentURL);
-    const response = await fetch(contentURL);
+
+    let downloadContent = new Promise<ArrayBuffer>((resolve, _reject) => {
+      let xhr = new XMLHttpRequest();
+      xhr.responseType = "arraybuffer";
+
+      xhr.addEventListener(
+        "progress",
+        (e) => {
+          // There's currently no content-length from the server so we have
+          // to synthesize `total`.
+          // Ultimately we probably want to include decryption progress and whatever else in the progress
+          // handler, but for now we can expect the vast majority to be spent in network i/o
+          const total = downloadMeta.fileMeta.fileSize;
+          progressHandler(e.loaded, total);
+        },
+        false
+      );
+
+      xhr.onreadystatechange = (_) => {
+        if (xhr.readyState == 4) {
+          resolve(xhr.response);
+        }
+      };
+
+      xhr.open("get", contentURL, true);
+      xhr.send();
+    });
+
+    await downloadContent;
+
     // TODO: stream
-    const encryptedBytes = await (await response.blob()).arrayBuffer();
+    const encryptedBytes: ArrayBuffer = await downloadContent;
     const decryptedContent = await this.cipher().decrypt(encryptedBytes);
 
     var blobUrl = URL.createObjectURL(new Blob([decryptedContent]));

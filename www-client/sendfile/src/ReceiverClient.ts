@@ -14,21 +14,23 @@ export class ReceiverClient {
     downloadURL: URL,
     apiEndpoint: URL
   ): Promise<ReceiverClient> {
-    const { downloadId, cipherKey } = await ReceiverClient.parseDownloadURL(
-      downloadURL
-    );
+    const { downloadId, serializedCipherKey } =
+      ReceiverClient.parseDownloadURL(downloadURL);
 
+    const cipherKey = await CipherKey.fromSerializedText(serializedCipherKey);
     return new ReceiverClient(apiEndpoint, cipherKey, downloadId);
   }
 
-  static async parseDownloadURL(
-    downloadURL: URL
-  ): Promise<{ downloadId: string; cipherKey: CipherKey }> {
+  static parseDownloadURL(downloadURL: URL): {
+    downloadId: string;
+    serializedCipherKey: string;
+  } {
     let endpoint = new URL(downloadURL);
     endpoint.pathname = "";
     endpoint.hash = "";
 
     if (!downloadURL.pathname.startsWith("/download/")) {
+      // expose this to UI
       throw Error(`${downloadURL.pathname} doesn't look like a download URL`);
     }
     const downloadIdMatches = downloadURL.pathname.match("^/download/([^/]+)");
@@ -44,16 +46,16 @@ export class ReceiverClient {
     }
     let serializedCipherKey = downloadURL.hash.replace(/^#cipher_key=/, "");
 
-    const cipherKey = await CipherKey.fromSerializedText(serializedCipherKey);
-
     return {
       downloadId,
-      cipherKey,
+      serializedCipherKey,
     };
   }
 
-  async download(): Promise<void> {
+  async download(
+    progressHandler: (completed: number, total: number) => void
+  ): Promise<void> {
     const meta = await this.apiClient.fetchMeta(this.downloadId);
-    return this.apiClient.downloadContent(meta);
+    return this.apiClient.downloadContent(meta, progressHandler);
   }
 }

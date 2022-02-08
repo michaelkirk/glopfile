@@ -61,7 +61,22 @@ class Uploader extends React.Component<UploaderProps, UploaderState> {
     );
     this.setState({ fileUpload });
 
-    await senderClient.uploadProvisionedFile(provisionedFile);
+    await senderClient.uploadProvisionedFile(
+      provisionedFile,
+      (completed: number, total: number): void => {
+        let fileUpload = this.state.fileUpload!;
+        const progressedFileUpload = Object.assign({}, fileUpload);
+        progressedFileUpload.progressRatio = completed / total;
+        this.setState({ fileUpload: progressedFileUpload });
+      }
+    );
+
+    (() => {
+      let fileUpload = this.state.fileUpload!;
+      const completedFileUpload = Object.assign({}, fileUpload);
+      completedFileUpload.isComplete = true;
+      this.setState({ fileUpload: completedFileUpload });
+    })();
   }
 }
 
