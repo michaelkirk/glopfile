@@ -62,7 +62,9 @@ init(Req, _InitialState) ->
           <<"cache-control">> => <<"no-cache, no-store">>,
           <<"expires">>       => <<"Fri, 1 Jan 1999 12:00:00 AM GMT">>,
           <<"pragma">>        => <<"no-cache">>,
-          <<"access-control-allow-origin">> => <<"*">>},
+          <<"access-control-allow-origin">> => <<"*">>,
+          <<"access-control-allow-methods">> => <<"GET, POST">>
+         },
     StreamRespHeaders = RespHeaders#{<<"content-type">> => <<"application/octet-stream">>},
     QueryString = maps:from_list(cowboy_req:parse_qs(Req)),
     #{method := Method, path := Path} = Req,
@@ -73,6 +75,7 @@ init(Req, _InitialState) ->
         {websocket, WsArg}           -> {cowboy_websocket, Req, WsArg, sendfile_websocket:websocket_opts()};
         not_found                    -> {ok, cowboy_req:reply(404, RespHeaders, <<>>, Req), #state{}};
         invalid_method               -> {ok, cowboy_req:reply(405, RespHeaders, <<>>, Req), #state{}};
+        options                      -> {ok, cowboy_req:reply(200, RespHeaders, <<>>, Req), #state{}};
         {conflict, RespBody}         -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, Req), #state{}};
         {conflict, RespBody, NewReq} -> {ok, cowboy_req:reply(409, RespHeaders, RespBody, NewReq), #state{}};
         {invalid, InvalidReason} ->
@@ -121,6 +124,7 @@ websocket_info(Message, State) ->
         {websocket, WebsocketInitArg :: sendfile_websocket:start_opts()} |
         not_found |
         invalid_method |
+        options |
         {conflict, ResponseBody :: binary()} |
         {conflict, ResponseBody :: binary(), NewRequest :: cowboy:req()} |
         {invalid, Err :: any()}.
@@ -233,7 +237,11 @@ handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
             {invalid, invalid_range}
     end;
 
-%% non-POST to top-level endpoint
+%% OPTIONS to to-level endpoint
+handle_upload(<<_Id/binary>>, <<>>, #{method := <<"OPTIONS">>} = _Req) ->
+    options;
+
+%% any other method to top-level endpoint
 handle_upload(<<_Id/binary>>, <<>>, _Req) ->
     invalid_method;
 
