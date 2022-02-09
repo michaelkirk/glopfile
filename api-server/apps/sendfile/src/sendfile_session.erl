@@ -130,7 +130,7 @@ upload_data(Pid, Data) ->
 
 -spec websocket_data(pid(), websocket_data(), sendfile_websocket:direction()) -> websocket_data_result() | call_result().
 websocket_data(Pid, Frame, From) ->
-    gen_server:call(Pid, #websocket_data_cast{frame = Frame, from = From}, infinity).
+    gen_server:cast(Pid, #websocket_data_cast{frame = Frame, from = From}).
 
 -spec metadata(binary()) -> metadata_result() | call_result().
 metadata(<<Id/binary>>) ->

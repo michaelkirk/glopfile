@@ -146,4 +146,5 @@ handle_recv_data(Frame, _From, State) ->
     {reply, {ok, []}, State}.
 
 handle_send(Frames, State) ->
-    sendfile_api_handler:websocket_send(State#state.websocket_pid, Frames).
+    sendfile_api_handler:websocket_send(State#state.websocket_pid, Frames),
+    {noreply, State}.
