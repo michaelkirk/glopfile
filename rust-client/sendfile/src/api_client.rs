@@ -8,6 +8,9 @@ use url::Url;
 use crate::cipher::{CipherKey, ContentCipher};
 use crate::{Error, Result};
 
+// should this be configurable, or infinite even?
+const CONTENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(500);
+
 pub(crate) struct ApiClient {
     cipher_key: CipherKey,
     endpoint: Url,
@@ -76,13 +79,9 @@ impl ApiClient {
         // TODO stream
         let encrypted_bytes = ContentCipher::new(&self.cipher_key).encrypt(&plaintext);
 
-        // it might be a while before the downloader connects
-        // TODO: make this configurable?
-        let upload_timeout = std::time::Duration::from_secs(500);
-
         let response = self
             .http_client_builder()
-            .timeout(upload_timeout)
+            .timeout(CONTENT_TIMEOUT)
             .build()
             .expect("invalid timeout for http client?")
             .post(url)
@@ -139,7 +138,14 @@ impl ApiClient {
             .join(&download_meta.encrypted_content_url)
             .map_err(|_| Error::InvalidInput("bad content url"))?;
 
-        let response = self.http_client().get(content_url).send()?;
+        let response = self
+            .http_client_builder()
+            .timeout(CONTENT_TIMEOUT)
+            .build()
+            .expect("invalid timeout for http client?")
+            .get(content_url)
+            .send()?;
+
         if !response.status().is_success() {
             return Err(Error::ClientHttpErrorResponse {
                 message: "failed to download content",
