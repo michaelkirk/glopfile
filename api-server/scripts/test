@@ -1,0 +1,23 @@
+set -e
+
+step_i=0
+function step {
+    STEPS=5;
+    step_i=$(($step_i + 1));
+    echo "[STEP ${step_i}/${STEPS}]: ${1}";
+}
+
+step compile
+rebar3 compile
+
+step "type check (dialyzer)"
+rebar3 dialyzer
+
+step "cross-reference analysis (xref)"
+rebar3 xref
+
+step "run unit tests (eunit)"
+rebar3 eunit
+
+step "run integration tests (common_test)"
+rebar3 ct
