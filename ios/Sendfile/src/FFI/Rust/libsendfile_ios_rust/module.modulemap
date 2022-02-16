@@ -1,0 +1,4 @@
+module libsendfile_ios_rust {
+  header "sendfile-ios-rust.h"
+  link "sendfile_ios_rust"
+}

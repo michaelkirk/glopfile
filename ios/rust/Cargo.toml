@@ -1,0 +1,15 @@
+[package]
+name    = "sendfile-ios-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "sendfile_ios_rust"
+crate_type = ["staticlib"]
+
+[dependencies]
+sendfile = { git = "ssh://git@github.com/glopfile/sendfile-cli.git", branch = "master" }
+
+[build-dependencies]
+cbindgen = "0.19"
+toml = "0.5"
