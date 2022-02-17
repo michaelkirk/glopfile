@@ -1,0 +1,27 @@
+namespace SendfileRust {
+};
+
+interface FileUploader {
+  [Throws=NewFileUploaderError]
+  constructor([ByRef] string api_endpoint, [ByRef] string download_endpoint);
+
+  [Throws=FileUploadError]
+  FileUpload provision_file([ByRef] string path);
+};
+
+interface FileUpload {
+  string url();
+
+  [Throws=FileUploadError]
+  void upload();
+};
+
+[Error]
+enum NewFileUploaderError {
+  "InvalidEndpoint",
+};
+
+[Error]
+enum FileUploadError {
+  "Sendfile",
+};

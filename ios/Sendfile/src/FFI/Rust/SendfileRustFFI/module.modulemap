@@ -1,0 +1,5 @@
+module SendfileRustFFI {
+    header "SendfileRustFFI.h"
+    link "sendfile_ios_rust"
+    export *
+}

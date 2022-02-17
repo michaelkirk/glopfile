@@ -1,19 +1,14 @@
-use std::env;
-use std::fs;
+const OUT_DIR: &str = "../Sendfile/src/FFI/Rust/SendfileRustFFI";
 
 fn main() {
-    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let pkg_name = env::var("CARGO_PKG_NAME").unwrap();
+    uniffi_build::generate_scaffolding("src/lib.udl").unwrap();
 
-    println!("cargo:rerun-if-changed=src/lib.rs");
-
-    let cbindgen_config: cbindgen::Config = toml::from_slice(&fs::read("cbindgen.toml").unwrap()).unwrap();
-
-    cbindgen::Builder::new()
-        .with_crate(crate_dir)
-        .with_config(cbindgen_config)
-        .with_language(cbindgen::Language::C)
-        .generate()
-        .unwrap()
-        .write_to_file(format!("../Sendfile/src/FFI/Rust/libsendfile_ios_rust/{}.h", pkg_name));
+    uniffi_bindgen::generate_bindings(
+        "src/lib.udl",
+        Some("uniffi.toml"),
+        vec!["swift"],
+        Some(OUT_DIR),
+        true,
+    )
+    .unwrap();
 }

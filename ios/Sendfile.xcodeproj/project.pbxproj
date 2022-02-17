@@ -9,25 +9,31 @@
 /* Begin PBXBuildFile section */
 		C87A469427BD4A9800C83DCE /* SendfileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C87A469327BD4A9800C83DCE /* SendfileApp.swift */; };
 		C87A469827BD4A9A00C83DCE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C87A469727BD4A9A00C83DCE /* Assets.xcassets */; };
-		C8A9FB6327BD503A008FAF28 /* Lib.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6227BD503A008FAF28 /* Lib.swift */; };
 		C8A9FB6827BD5194008FAF28 /* AppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6727BD5194008FAF28 /* AppView.swift */; };
 		C8A9FB6C27BD51F9008FAF28 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6B27BD51F9008FAF28 /* AppEnvironment.swift */; };
 		C8A9FB6E27BD5233008FAF28 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6D27BD5233008FAF28 /* AppPreferences.swift */; };
 		C8A9FB7A27BD5902008FAF28 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = C8A9FB7927BD5902008FAF28 /* Settings.bundle */; };
+		C8A9FB8127BD8293008FAF28 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB8027BD8293008FAF28 /* DocumentPicker.swift */; };
+		C8A9FB8427BD922A008FAF28 /* FileUploadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB8327BD922A008FAF28 /* FileUploadModel.swift */; };
+		C8A9FB8627BD938A008FAF28 /* FileUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB8527BD938A008FAF28 /* FileUploadView.swift */; };
+		C8D86E1627BE364700947CED /* SendfileRust.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D86E1527BE364700947CED /* SendfileRust.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		C87A469027BD4A9800C83DCE /* Sendfile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sendfile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C87A469327BD4A9800C83DCE /* SendfileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendfileApp.swift; sourceTree = "<group>"; };
 		C87A469727BD4A9A00C83DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		C8A9FB6227BD503A008FAF28 /* Lib.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lib.swift; sourceTree = "<group>"; };
 		C8A9FB6727BD5194008FAF28 /* AppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppView.swift; sourceTree = "<group>"; };
 		C8A9FB6B27BD51F9008FAF28 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		C8A9FB6D27BD5233008FAF28 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
-		C8A9FB6F27BD525D008FAF28 /* sendfile-ios-rust.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "sendfile-ios-rust.h"; sourceTree = "<group>"; };
-		C8A9FB7027BD525D008FAF28 /* module.modulemap */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
 		C8A9FB7127BD52B2008FAF28 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C8A9FB7927BD5902008FAF28 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
+		C8A9FB8027BD8293008FAF28 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
+		C8A9FB8327BD922A008FAF28 /* FileUploadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadModel.swift; sourceTree = "<group>"; };
+		C8A9FB8527BD938A008FAF28 /* FileUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadView.swift; sourceTree = "<group>"; };
+		C8D86E1527BE364700947CED /* SendfileRust.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SendfileRust.swift; sourceTree = "<group>"; };
+		C8D86E1827BE37A500947CED /* SendfileRustFFI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SendfileRustFFI.h; sourceTree = "<group>"; };
+		C8D86E1927BE37A500947CED /* module.modulemap */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,32 +88,15 @@
 		C8A9FB6027BD5026008FAF28 /* FFI */ = {
 			isa = PBXGroup;
 			children = (
-				C8A9FB6127BD502F008FAF28 /* Rust */,
+				C8D86DF927BE0BDA00947CED /* Rust */,
 			);
 			path = FFI;
-			sourceTree = "<group>";
-		};
-		C8A9FB6127BD502F008FAF28 /* Rust */ = {
-			isa = PBXGroup;
-			children = (
-				C8A9FB6427BD506D008FAF28 /* libsendfile_ios_rust */,
-				C8A9FB6227BD503A008FAF28 /* Lib.swift */,
-			);
-			path = Rust;
-			sourceTree = "<group>";
-		};
-		C8A9FB6427BD506D008FAF28 /* libsendfile_ios_rust */ = {
-			isa = PBXGroup;
-			children = (
-				C8A9FB7027BD525D008FAF28 /* module.modulemap */,
-				C8A9FB6F27BD525D008FAF28 /* sendfile-ios-rust.h */,
-			);
-			path = libsendfile_ios_rust;
 			sourceTree = "<group>";
 		};
 		C8A9FB6527BD5168008FAF28 /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				C8A9FB8227BD9200008FAF28 /* Models */,
 				C8A9FB6627BD5183008FAF28 /* Views */,
 			);
 			path = UI;
@@ -116,7 +105,9 @@
 		C8A9FB6627BD5183008FAF28 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				C8A9FB7F27BD8287008FAF28 /* Controls */,
 				C8A9FB6727BD5194008FAF28 /* AppView.swift */,
+				C8A9FB8527BD938A008FAF28 /* FileUploadView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -136,6 +127,40 @@
 				C8A9FB7927BD5902008FAF28 /* Settings.bundle */,
 			);
 			path = res;
+			sourceTree = "<group>";
+		};
+		C8A9FB7F27BD8287008FAF28 /* Controls */ = {
+			isa = PBXGroup;
+			children = (
+				C8A9FB8027BD8293008FAF28 /* DocumentPicker.swift */,
+			);
+			path = Controls;
+			sourceTree = "<group>";
+		};
+		C8A9FB8227BD9200008FAF28 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				C8A9FB8327BD922A008FAF28 /* FileUploadModel.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		C8D86DF927BE0BDA00947CED /* Rust */ = {
+			isa = PBXGroup;
+			children = (
+				C8D86E1727BE37A500947CED /* SendfileRustFFI */,
+			);
+			path = Rust;
+			sourceTree = "<group>";
+		};
+		C8D86E1727BE37A500947CED /* SendfileRustFFI */ = {
+			isa = PBXGroup;
+			children = (
+				C8D86E1527BE364700947CED /* SendfileRust.swift */,
+				C8D86E1827BE37A500947CED /* SendfileRustFFI.h */,
+				C8D86E1927BE37A500947CED /* module.modulemap */,
+			);
+			path = SendfileRustFFI;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -256,10 +281,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				C8A9FB6E27BD5233008FAF28 /* AppPreferences.swift in Sources */,
+				C8A9FB8427BD922A008FAF28 /* FileUploadModel.swift in Sources */,
 				C87A469427BD4A9800C83DCE /* SendfileApp.swift in Sources */,
 				C8A9FB6C27BD51F9008FAF28 /* AppEnvironment.swift in Sources */,
-				C8A9FB6327BD503A008FAF28 /* Lib.swift in Sources */,
+				C8A9FB8127BD8293008FAF28 /* DocumentPicker.swift in Sources */,
+				C8D86E1627BE364700947CED /* SendfileRust.swift in Sources */,
 				C8A9FB6827BD5194008FAF28 /* AppView.swift in Sources */,
+				C8A9FB8627BD938A008FAF28 /* FileUploadView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -336,7 +364,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				HEADER_SEARCH_PATHS = Sendfile/src/FFI/Rust/libsendfile_ios_rust;
+				HEADER_SEARCH_PATHS = Sendfile/src/FFI/Rust/SendfileRustFFI;
 				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*][arch=arm64]" = "target/aarch64-apple-ios/debug";
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*][arch=x86_64]" = "target/x86_64-apple-ios/debug";
@@ -416,7 +444,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				HEADER_SEARCH_PATHS = Sendfile/src/FFI/Rust/libsendfile_ios_rust;
+				HEADER_SEARCH_PATHS = Sendfile/src/FFI/Rust/SendfileRustFFI;
 				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*][arch=arm64]" = "target/aarch64-apple-ios/release";
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*][arch=x86_64]" = "target/x86_64-apple-ios/release";
@@ -567,7 +595,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				HEADER_SEARCH_PATHS = Sendfile/src/FFI/Rust/libsendfile_ios_rust;
+				HEADER_SEARCH_PATHS = Sendfile/src/FFI/Rust/SendfileRustFFI;
 				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*][arch=arm64]" = "target/aarch64-apple-ios/release";
 				"LIBRARY_SEARCH_PATHS[sdk=iphoneos*][arch=x86_64]" = "target/x86_64-apple-ios/release";
