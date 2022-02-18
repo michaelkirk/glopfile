@@ -45,7 +45,7 @@ impl FileUploader {
             .client
             .provision_file(Path::new(path))
             .map_err(|error| {
-                log::warn!("error provisioning file: {error}");
+                log::warn!("error provisioning file: {error}", error = error);
                 error
             })?;
         let url = provisioned_file.formatted_download_url_and_key();
