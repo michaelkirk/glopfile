@@ -1,0 +1,34 @@
+server {
+    server_name    s.endoftheworl.de;
+    root           /var/www/s.endoftheworl.de;
+    index          index.html;
+
+    gzip             on;
+    gzip_comp_level  3;
+    gzip_types       text/plain text/css application/javascript image/*;
+
+
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/s.endoftheworl.de/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/s.endoftheworl.de/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+    # Single page App routing.
+    location / {
+    	try_files $uri /index.html;
+    }
+}
+
+server {
+    if ($host = s.endoftheworl.de) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    server_name    s.endoftheworl.de;
+    listen 80;
+    return 404; # managed by Certbot
+
+
+}

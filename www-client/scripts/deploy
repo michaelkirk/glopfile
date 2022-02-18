@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd $REPO_ROOT
+
+DESTINATION=sendoftheworld@s.endoftheworl.de:/var/www/s.endoftheworl.de
+
+rsync -avz --delete --progress sendfile-ui/build/ $DESTINATION
