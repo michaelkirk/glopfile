@@ -1,7 +1,8 @@
 [package]
 name = "sendfile-cli"
 version = "0.1.0"
-edition = "2021"
+# We use edition 2018 to match the sendfile crate in this workspace, since Cargo complains otherwise.
+edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
