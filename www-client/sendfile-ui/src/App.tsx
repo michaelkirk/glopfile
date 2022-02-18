@@ -5,7 +5,7 @@ import Downloader from "./Downloader";
 import Uploader from "./Uploader";
 
 class AppState {
-  apiEndpoint = new URL("http://localhost:8080");
+  apiEndpoint = new URL("https://sendfile.jessa0.com")
 }
 
 class App extends React.Component<{}, AppState> {
