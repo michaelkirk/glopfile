@@ -1,5 +1,7 @@
-import { APIClient } from "./APIClient";
+import { APIClient, DownloadMeta } from "./APIClient";
 import { CipherKey } from "./cipher";
+
+export { DownloadMeta };
 
 export class ReceiverClient {
   apiClient: APIClient;
@@ -52,10 +54,21 @@ export class ReceiverClient {
     };
   }
 
+  async fetchMeta(): Promise<DownloadMeta> {
+    return await this.apiClient.fetchMeta(this.downloadId);
+  }
+
+  async downloadContent(
+    meta: DownloadMeta,
+    progressHandler: (completed: number, total: number) => void
+  ): Promise<void> {
+    return this.apiClient.downloadContent(meta, progressHandler);
+  }
+
   async download(
     progressHandler: (completed: number, total: number) => void
   ): Promise<void> {
-    const meta = await this.apiClient.fetchMeta(this.downloadId);
-    return this.apiClient.downloadContent(meta, progressHandler);
+    const meta = await this.fetchMeta();
+    return this.downloadContent(meta, progressHandler);
   }
 }

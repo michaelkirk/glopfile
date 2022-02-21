@@ -148,7 +148,7 @@ export class APIClient {
   }
 }
 
-class DownloadMeta {
+export class DownloadMeta {
   encryptedContentURL: string;
   fileMeta: FileMeta;
 

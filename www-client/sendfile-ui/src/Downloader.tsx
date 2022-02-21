@@ -1,8 +1,9 @@
 import React from "react";
-import { ReceiverClient } from "sendfile";
+import { ReceiverClient, DownloadMeta } from "sendfile";
 
 class DownloaderState {
   receiverClient?: Promise<ReceiverClient>;
+  downloadMeta?: DownloadMeta;
   errorText?: string;
   progress?: Progress;
 }
@@ -61,43 +62,109 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
     this.state = state;
   }
 
+  componentDidMount(): void {
+    if (this.state.receiverClient) {
+      this.state.receiverClient.then((receiverClient) => {
+        receiverClient.fetchMeta().then((downloadMeta) => {
+          this.setState({ downloadMeta });
+        });
+      });
+    }
+  }
+
   render(): React.ReactElement {
     if (this.state.errorText) {
       return <p>{this.state.errorText}</p>;
     }
+
+    let maybeDownloadButton;
+    const hasStartedDownloadingContent = !!this.state.progress;
+    if (this.state.downloadMeta && !hasStartedDownloadingContent) {
+      let downloadMeta: DownloadMeta = this.state.downloadMeta;
+      maybeDownloadButton = (
+        <button onClick={() => this.downloadContent(downloadMeta)}>
+          Start Download
+        </button>
+      );
+    }
+
     return (
       <div>
         <h1>Download</h1>
-        <div>
-          {this.state.progress && (
+        {this.state.downloadMeta ? (
+          <div>
             <table>
               <tbody>
                 <tr>
+                  <th>file</th>
+                  <td>{this.formattedFileName()}</td>
+                </tr>
+                <tr>
+                  <th>size</th>
+                  <td>{this.formattedFileSize()}</td>
+                </tr>
+                <tr>
                   <th>downloaded</th>
-                  <td>{this.downloadProgress(this.state.progress)}</td>
+                  <td>{this.formattedDownloadProgress()}</td>
                 </tr>
               </tbody>
             </table>
-          )}
-          <button onClick={this.onClickDownloadHandler.bind(this)}>
-            Start Download
-          </button>
-        </div>
+            {maybeDownloadButton}
+          </div>
+        ) : (
+          <p>Fetching download information...</p>
+        )}
       </div>
     );
   }
 
-  downloadProgress(progress: Progress): string {
-    const percent = 100.0 * progress.ratio();
-    return `${percent.toFixed(1)}%`;
+  formattedDownloadProgress(): string {
+    if (this.state.progress) {
+      const percent = 100.0 * this.state.progress.ratio();
+      return `${percent.toFixed(1)}%`;
+    } else {
+      return "";
+    }
   }
 
-  async onClickDownloadHandler(): Promise<void> {
+  formattedFileName(): string {
+    if (!this.state.downloadMeta) {
+      return "unknown size";
+    }
+    return this.state.downloadMeta.fileMeta.fileName;
+  }
+
+  formattedFileSize(): string {
+    // modified from https://stackoverflow.com/a/18650828/353178
+    const formatBytes = (bytes: number, decimals = 2) => {
+      if (bytes === 0) return "0 Bytes";
+
+      //const k = 1024;
+      // 1000 matches what's shown in, e.g. finder
+      const k = 1000;
+      const dm = decimals < 0 ? 0 : decimals;
+      const sizes = ["Bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"];
+
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + " " + sizes[i];
+    };
+
+    if (!this.state.downloadMeta) {
+      return "unknown size";
+    }
+    return formatBytes(this.state.downloadMeta.fileMeta.fileSize);
+  }
+
+  async downloadContent(downloadMeta: DownloadMeta): Promise<void> {
     this.setState({ progress: new Progress() });
     const receiverClient = await this.state.receiverClient!;
-    await receiverClient.download((completed: number, total: number): void => {
-      this.setState({ progress: new Progress(completed, total) });
-    });
+    await receiverClient.downloadContent(
+      downloadMeta,
+      (completed: number, total: number): void => {
+        this.setState({ progress: new Progress(completed, total) });
+      }
+    );
   }
 }
 
