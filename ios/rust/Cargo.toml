@@ -11,7 +11,7 @@ crate_type = ["staticlib"]
 anyhow = "1.0.53"
 crossbeam-utils = "0.8.7"
 log = "0.4.14"
-sendfile = { git = "ssh://git@github.com/glopfile/sendfile-cli.git", branch = "master" }
+sendfile = { git = "ssh://git@github.com/privacyresearchgroup/sendfile-cli.git", branch = "master" }
 thiserror = "1.0.30"
 uniffi = "0.17.0"
 url = "2.2.2"

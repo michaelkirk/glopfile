@@ -946,7 +946,7 @@ dependencies = [
 [[package]]
 name = "sendfile"
 version = "0.1.0"
-source = "git+ssh://git@github.com/glopfile/sendfile-cli.git?branch=master#0409bd860c44e207f42987b5175cb1465039766e"
+source = "git+ssh://git@github.com/privacyresearchgroup/sendfile-cli.git?rev=519200acb75e14990c10c786db1bcad186576983#519200acb75e14990c10c786db1bcad186576983"
 dependencies = [
  "aes-gcm",
  "base64",
