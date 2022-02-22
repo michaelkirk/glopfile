@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import os
+import SendfileRustFFI
 
 enum FileUploadModelError: Error {
     case access
@@ -48,7 +49,12 @@ class FileUploadModel: ObservableObject {
                         self.fileUpload = fileUpload
                     }
                 } catch let error {
-                    os_log("error provisioning file: \(error.localizedDescription)")
+                    switch error {
+                    case FileUploadError.Sendfile(let error):
+                        os_log("error provisioning file: \(error)")
+                    default:
+                        os_log("error provisioning file: \(error.localizedDescription)")
+                    }
                     DispatchQueue.main.async {
                         self.lastResult = .error(error.localizedDescription)
                     }
@@ -61,8 +67,14 @@ class FileUploadModel: ObservableObject {
                 try fileUpload.upload()
                 result = .success
             } catch let error {
-                os_log("error uploading file: \(error.localizedDescription)")
-                result = .error(error.localizedDescription)
+                switch error {
+                case FileUploadError.Sendfile(let error):
+                    os_log("error uploading file: \(error)")
+                    result = .error(error)
+                default:
+                    os_log("error uploading file: \(error.localizedDescription)")
+                    result = .error(error.localizedDescription)
+                }
             }
             DispatchQueue.main.async {
                 self.lastResult = result

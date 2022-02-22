@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import os
+import SendfileRustFFI
 
 struct AppView: View {
     @Environment(\.env) var env: AppEnvironment
@@ -35,6 +36,8 @@ struct AppView: View {
                     self.fileUpload = fileUpload
                     fileUpload.start()
                     fileUploadViewIsActive = true
+                } catch NewFileUploaderError.InvalidEndpoint(let error) {
+                    assertionFailure("invalid API endpoint: \(error)")
                 } catch let error {
                     os_log("error starting file upload: \(error.localizedDescription)")
                 }
