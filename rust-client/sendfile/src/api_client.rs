@@ -211,7 +211,11 @@ impl ApiClient {
                 .map_err(|_| Error::InvalidInput("bad content url"))?
                 .pop()
                 .push("ws");
-            content_url.set_scheme("ws").expect("bad scheme?");
+            match content_url.scheme() {
+                "https" => content_url.set_scheme("wss").expect("bad scheme?"),
+                "http"  => content_url.set_scheme("ws").expect("bad scheme?"),
+                _ => return Err(Error::InvalidInput("bad api url scheme")),
+            }
             content_url
         };
         let websocket = WebSocketConnection::connect(websocket_url, handle_incoming_message)?;
@@ -232,7 +236,11 @@ impl ApiClient {
                 .path_segments_mut()
                 .map_err(|_| Error::InvalidInput("bad upload path"))?
                 .push("ws");
-            upload_url.set_scheme("ws").expect("bad scheme?");
+            match upload_url.scheme() {
+                "https" => upload_url.set_scheme("wss").expect("bad scheme?"),
+                "http"  => upload_url.set_scheme("ws").expect("bad scheme?"),
+                _ => return Err(Error::InvalidInput("bad api url scheme")),
+            }
             upload_url
         };
         let websocket = WebSocketConnection::connect(websocket_url, handle_incoming_message)?;
