@@ -1,4 +1,4 @@
-FROM ghcr.io/glopfile/sendfile:latest
+FROM ghcr.io/privacyresearchgroup/sendfile:latest
 
 COPY --chown=erlang:erlang config/sys.config /home/erlang/config/
 COPY --chown=erlang:erlang erlang.cookie /home/erlang/.erlang.cookie
