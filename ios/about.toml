@@ -4,6 +4,7 @@ accepted = [
     "AGPL-3.0",
     "BSD-3-Clause",
     "MPL-2.0",
+    "LGPL-2.1",
 ]
 
 targets = [

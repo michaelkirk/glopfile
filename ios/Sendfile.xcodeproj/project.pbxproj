@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C83E302427C5854400D5B4E8 /* libc++.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C83E302327C5854400D5B4E8 /* libc++.tbd */; };
 		C87A469427BD4A9800C83DCE /* SendfileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C87A469327BD4A9800C83DCE /* SendfileApp.swift */; };
 		C87A469827BD4A9A00C83DCE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C87A469727BD4A9A00C83DCE /* Assets.xcassets */; };
 		C8A9FB6827BD5194008FAF28 /* AppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6727BD5194008FAF28 /* AppView.swift */; };
@@ -20,6 +21,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C83E302327C5854400D5B4E8 /* libc++.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = "libc++.tbd"; path = "usr/lib/libc++.tbd"; sourceTree = SDKROOT; };
 		C87A469027BD4A9800C83DCE /* Sendfile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sendfile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C87A469327BD4A9800C83DCE /* SendfileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendfileApp.swift; sourceTree = "<group>"; };
 		C87A469727BD4A9A00C83DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -41,17 +43,27 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C83E302427C5854400D5B4E8 /* libc++.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		C83E302227C5854400D5B4E8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				C83E302327C5854400D5B4E8 /* libc++.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		C87A468727BD4A9800C83DCE = {
 			isa = PBXGroup;
 			children = (
 				C87A469227BD4A9800C83DCE /* Sendfile */,
 				C87A469127BD4A9800C83DCE /* Products */,
+				C83E302227C5854400D5B4E8 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};

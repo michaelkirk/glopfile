@@ -1,13 +1,13 @@
 use std::{path::Path, sync::Arc};
 
 use crossbeam_utils::atomic::AtomicCell;
-use sendfile::SenderClient;
+use sendfile::UploaderClient;
 use url::Url;
 
 use crate::logger;
 
 pub struct FileUploader {
-    client: Arc<SenderClient>,
+    client: Arc<UploaderClient>,
 }
 
 pub struct FileUpload {
@@ -35,7 +35,7 @@ impl FileUploader {
         logger::set_logger();
         let api_endpoint = Url::parse(api_endpoint)?;
         let download_endpoint = Url::parse(download_endpoint)?;
-        let client = Arc::new(SenderClient::new(api_endpoint, download_endpoint));
+        let client = Arc::new(UploaderClient::new(api_endpoint, download_endpoint));
         Ok(Self { client })
     }
 
