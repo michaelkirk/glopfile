@@ -38,6 +38,7 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
               Copy
             </a>
             ]
+            <Toaster containerStyle={{ position: 'relative' }} />
           </p>
         </div>
       );
