@@ -1,5 +1,6 @@
 import React from "react";
 import FileUpload from "./FileUpload";
+import toast, { Toaster } from "react-hot-toast";
 
 class FileUploaderProps {
   fileUpload: FileUpload;
@@ -19,13 +20,12 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
           <br />[
           <a
             href="#copy"
-            onClick={(_) =>
-              this.copyToClipboard(this.downloadURLWithCipherKey())
-            }
+            onClick={(_) => { this.copyToClipboard(this.downloadURLWithCipherKey()); toast.success("Link copied!"); }}
           >
             Copy
           </a>
           ]
+          <Toaster containerStyle={{ position: 'relative' }} />
         </p>
       </div>
     );
