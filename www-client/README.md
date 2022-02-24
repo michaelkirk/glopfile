@@ -1,24 +1,23 @@
-[./sendfile] is typescript library for sending and receiving files.
-[./senfile-ui] is a react powered user interface on top of the sendfile library.
+[./sendfile] is TypeScript library for sending and receiving files.
+[./sendfile-ui] is a React-powered user interface on top of the sendfile library.
 
 ## Development
 
 
-### Install dependencies
+### Install dependencies and compile the TypeScript library
 
-    cd sendfile-ui
-    yarn install
-
+    (cd sendfile-ui && yarn install)
+    (cd sendfile && yarn install && yarn tsc)
 
 ### Link to local sendfile
 
 While developing, you probably want to see subsequent changes in sendfile
-reflected in sendfile-ui. So after `yarn install`, replace the static copy of
-sendfile with a symlink, like this:
+reflected in sendfile-ui. After completing the steps above, you can replace
+the static copy of sendfile with a symlink like this:
 
-    rm -fr node_modules/sendfile
-    ln -s ../../sendfile node_modules/sendfile
+    rm -fr sendfile-ui/node_modules/sendfile
+    ln -s -r sendfile sendfile-ui/node_modules
 
-### start the app server
+### Start the app server
 
-    yarn start
+    cd sendfile-ui && yarn start
