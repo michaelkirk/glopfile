@@ -6,8 +6,8 @@
 
 ### Install dependencies and compile the TypeScript library
 
-    (cd sendfile-ui && yarn install)
     (cd sendfile && yarn install && yarn tsc)
+    (cd sendfile-ui && yarn install)
 
 ### Link to local sendfile
 
