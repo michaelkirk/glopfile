@@ -227,6 +227,7 @@ handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
         {bytes, [{ReqPosition, infinity}]} ->
             case sendfile_session:start_upload(Id, Tag, ReqPosition) of
                 {ok, Pid} ->
+                    ok = cowboy_req:inform(100, Req),
                     upload(Pid, Req);
                 {position, NewPosition} ->
                     {conflict, jsone:encode(upload_conflict_response(NewPosition))};
@@ -285,6 +286,10 @@ upload(Pid, Req) ->
                      ok -> {data, Data};
                      more -> {more, Data}
                  end,
+    ok = case Status of
+             ok -> cowboy_req:inform(102, Req);
+             more -> ok
+         end,
     case sendfile_session:upload_data(Pid, UploadData) of
         ok -> case Status of
                   ok   -> {ok, <<>>, BodyReadReq};
