@@ -76,9 +76,15 @@ export class APIClient {
     const encryptedContentURL = json.encrypted_content_url;
     let encryptedFileMeta = Base64.bodyDecode(json.meta);
 
-    const serialized: ArrayBuffer = await this.cipher().decrypt(
-      encryptedFileMeta
-    );
+    let serialized: ArrayBuffer;
+    try {
+      serialized = await this.cipher().decrypt(encryptedFileMeta);
+    } catch {
+      throw Error(
+        "Unable to decrypt file metadata. Please check the link or ask your friend to send the file again."
+      );
+    }
+
     let fileMeta = FileMeta.fromSerialized(serialized);
     const result = new DownloadMeta(encryptedContentURL, fileMeta);
     return result;

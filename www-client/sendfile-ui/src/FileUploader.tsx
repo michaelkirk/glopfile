@@ -33,12 +33,15 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
             <br />[
             <a
               href="#copy"
-              onClick={(_) => { this.copyToClipboard(this.downloadURLWithCipherKey()); toast.success("Link copied!"); }}
+              onClick={(_) => {
+                this.copyToClipboard(this.downloadURLWithCipherKey());
+                toast.success("Link copied!");
+              }}
             >
               Copy
             </a>
             ]
-            <Toaster containerStyle={{ position: 'relative' }} />
+            <Toaster containerStyle={{ position: "relative" }} />
           </p>
         </div>
       );

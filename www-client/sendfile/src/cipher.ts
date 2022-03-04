@@ -24,15 +24,19 @@ export class CipherKey {
   }
 
   static async fromSerializedText(serializedText: string): Promise<CipherKey> {
-    let buffer = Base64.urlSafeDecode(serializedText);
-    const cryptoKey = await window.crypto.subtle.importKey(
-      "raw",
-      buffer,
-      { name: "AES-GCM", length: 256 },
-      true,
-      ["decrypt"]
-    );
-    return new CipherKey(cryptoKey);
+    try {
+      let buffer = Base64.urlSafeDecode(serializedText);
+      const cryptoKey = await window.crypto.subtle.importKey(
+        "raw",
+        buffer,
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["decrypt"]
+      );
+      return new CipherKey(cryptoKey);
+    } catch (e) {
+      throw Error("Invalid cipher key. Did you get the entire link?");
+    }
   }
 }
 

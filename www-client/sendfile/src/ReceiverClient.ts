@@ -19,8 +19,12 @@ export class ReceiverClient {
     const { downloadId, serializedCipherKey } =
       ReceiverClient.parseDownloadURL(downloadURL);
 
-    const cipherKey = await CipherKey.fromSerializedText(serializedCipherKey);
-    return new ReceiverClient(apiEndpoint, cipherKey, downloadId);
+    try {
+      const cipherKey = await CipherKey.fromSerializedText(serializedCipherKey);
+      return new ReceiverClient(apiEndpoint, cipherKey, downloadId);
+    } catch (e) {
+      throw Error("Invalid cipher key. Did you get the entire link?");
+    }
   }
 
   static parseDownloadURL(downloadURL: URL): {

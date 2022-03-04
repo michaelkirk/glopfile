@@ -5,6 +5,7 @@ class DownloaderState {
   receiverClient?: Promise<ReceiverClient>;
   downloadMeta?: DownloadMeta;
   errorText?: string;
+  statusText?: string;
   progress?: Progress;
 }
 
@@ -42,7 +43,7 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
     let state = new DownloaderState();
 
     if (props.location.pathname === "/download") {
-      state.errorText =
+      state.statusText =
         "To download a file, ask the sender for the download link.";
     } else {
       const downloadURL = new URL(props.location.toString());
@@ -64,17 +65,29 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
 
   componentDidMount(): void {
     if (this.state.receiverClient) {
+      this.state.receiverClient.catch((err) => {
+        this.setState({ errorText: err.message });
+      });
       this.state.receiverClient.then((receiverClient) => {
-        receiverClient.fetchMeta().then((downloadMeta) => {
-          this.setState({ downloadMeta });
-        });
+        receiverClient
+          .fetchMeta()
+          .then((downloadMeta) => {
+            this.setState({ downloadMeta });
+          })
+          .catch((err) => {
+            this.setState({ errorText: err.message });
+          });
       });
     }
   }
 
   render(): React.ReactElement {
     if (this.state.errorText) {
-      return <p>{this.state.errorText}</p>;
+      return <p>🤮 {this.state.errorText}</p>;
+    }
+
+    if (this.state.statusText) {
+      return <p>🕵️ {this.state.statusText}</p>;
     }
 
     let maybeDownloadButton;
