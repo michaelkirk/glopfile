@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::cipher::{CipherKey, ContentCipher};
-use crate::websocket::{WebSocketConnection, WebSocketMessage};
+use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{Error, Result};
 
 // should this be configurable, or infinite even?
@@ -196,11 +196,11 @@ impl ApiClient {
         Ok(())
     }
 
-    pub fn connect_download_websocket(
+    pub async fn connect_download_websocket(
         &self,
         encrypted_content_url: &str,
         handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
-    ) -> Result<WebSocketConnection> {
+    ) -> Result<WebSocketClient> {
         let websocket_url = {
             let mut content_url = self
                 .endpoint
@@ -213,20 +213,21 @@ impl ApiClient {
                 .push("ws");
             match content_url.scheme() {
                 "https" => content_url.set_scheme("wss").expect("bad scheme?"),
-                "http"  => content_url.set_scheme("ws").expect("bad scheme?"),
+                "http" => content_url.set_scheme("ws").expect("bad scheme?"),
                 _ => return Err(Error::InvalidInput("bad api url scheme")),
             }
             content_url
         };
-        let websocket = WebSocketConnection::connect(websocket_url, handle_incoming_message)?;
-        Ok(websocket)
+        let websocket_client =
+            WebSocketClient::connect(websocket_url.as_str(), handle_incoming_message).await?;
+        Ok(websocket_client)
     }
 
-    pub fn connect_upload_websocket(
+    pub async fn connect_upload_websocket(
         &self,
         upload_path: &str,
         handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
-    ) -> Result<WebSocketConnection> {
+    ) -> Result<WebSocketClient> {
         let websocket_url = {
             let mut upload_url = self
                 .endpoint
@@ -238,13 +239,14 @@ impl ApiClient {
                 .push("ws");
             match upload_url.scheme() {
                 "https" => upload_url.set_scheme("wss").expect("bad scheme?"),
-                "http"  => upload_url.set_scheme("ws").expect("bad scheme?"),
+                "http" => upload_url.set_scheme("ws").expect("bad scheme?"),
                 _ => return Err(Error::InvalidInput("bad api url scheme")),
             }
             upload_url
         };
-        let websocket = WebSocketConnection::connect(websocket_url, handle_incoming_message)?;
-        Ok(websocket)
+        let websocket_client =
+            WebSocketClient::connect(websocket_url.as_str(), handle_incoming_message).await?;
+        Ok(websocket_client)
     }
 
     fn http_client_builder(&self) -> reqwest::blocking::ClientBuilder {

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bytes::BytesMut;
+use bytes::Bytes;
 use prost::Message;
 use url::Url;
 
@@ -63,23 +63,32 @@ impl DownloaderClient {
     }
 
     pub fn download_p2p(&self, timeout: Option<Duration>) -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+
         let meta = self.api_client.fetch_meta(&self.download_id)?;
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
-        let websocket = self.api_client.connect_download_websocket(
-            &meta.encrypted_content_url,
-            move |message| match message.inner {
-                Some(web_socket_message::Inner::RtcSignaling(message)) => signaling_message_handler
-                    .handle(message)
-                    .map(Continue)
-                    .unwrap_or(Break(())),
-                None => {
-                    // Unfortunately, with prost there's no way to log about what message type this actually was.
-                    warn!("unhandled websocket message type");
-                    Continue(())
-                }
-            },
-        )?;
+        let websocket = runtime.block_on(async {
+            self.api_client
+                .connect_download_websocket(&meta.encrypted_content_url, move |message| {
+                    match message.inner {
+                        Some(web_socket_message::Inner::RtcSignaling(message)) => {
+                            signaling_message_handler
+                                .handle(message)
+                                .map(Continue)
+                                .unwrap_or(Break(()))
+                        }
+                        None => {
+                            // Unfortunately, with prost there's no way to log about what message type this actually was.
+                            warn!("unhandled websocket message type");
+                            Continue(())
+                        }
+                    }
+                })
+                .await
+        })?;
         let decrypted_file = self
             .api_client
             .decrypted_file(&meta, self.output_dir.as_deref());
@@ -89,9 +98,13 @@ impl DownloaderClient {
             offset: 0,
             len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
         };
-        p2p_client.set_websocket(websocket)?;
-        p2p_client.create_offer()?;
-        p2p_client.transfer(&mut state, timeout)?;
+
+        runtime.block_on(async {
+            p2p_client.set_websocket(websocket).await?;
+            p2p_client.create_offer().await?;
+            p2p_client.transfer(&mut state, timeout).await
+        })?;
+
         self.api_client.finish_download(&meta)?;
         Ok(())
     }
@@ -148,7 +161,7 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
     fn data_channel_message(
         &mut self,
         client: &mut PeerToPeerClient,
-        message_data: BytesMut,
+        message_data: Bytes,
     ) -> Result<ControlFlow<()>> {
         let Self { inflight_data_request, decrypted_file, offset, .. } = self;
         let message = UploaderMessage::decode(message_data).map_err(Error::rtc_err)?;

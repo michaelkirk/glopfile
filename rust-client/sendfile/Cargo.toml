@@ -11,10 +11,12 @@ static = ["datachannel/static"]
 
 [dependencies]
 aes-gcm = "0.9.4"
+async-trait = "0.1.52"
 base64 = "0.13.0"
 bytes = "1.1.0"
-datachannel = "0.7.3"
+cfg-if = "1.0.0"
 futures = "0.3.21"
+instant = { version = "0.1.12", features = ["wasm-bindgen"] }
 log = "0.4.14"
 prost = "0.9.0"
 rand = "0.8.4"
@@ -22,17 +24,54 @@ reqwest = { version = "0.11.9", features = ["blocking", "json"] }
 serde = { version = "*", features = ["derive"] }
 serde_json = "1.0.75"
 thiserror = "1.0.30"
-tokio = "1.16.1"
-tokio-stream = "0.1"
-tokio-tungstenite = { version = "0.16.1", features = ["native-tls"] }
-tungstenite = "0.16.0"
 url = "2.2.2"
 webrtc-sdp = "0.3.9"
 zeroize = { version = "1.5", features = ["derive"] }
 
+[target."cfg(not(target_arch = \"wasm32\"))".dependencies]
+datachannel = "0.7.3"
+tokio = { version = "1.16.1", features = ["macros"] }
+tokio-stream = "0.1"
+tokio-tungstenite = { version = "0.16.1", features = ["native-tls"] }
+tungstenite = "0.16.0"
+
+[target."cfg(target_arch = \"wasm32\")".dependencies]
+js-sys = "0.3.56"
+wasm-bindgen = "0.2.79"
+wasm-bindgen-futures = "0.4.29"
+web-sys = { version = "0.3.56", features = [
+  "CloseEvent",
+  "ErrorEvent",
+  "BinaryType",
+  "MessageEvent",
+  "RtcConfiguration",
+  "RtcDataChannel",
+  "RtcDataChannelEvent",
+  "RtcDataChannelInit",
+  "RtcDataChannelType",
+  "RtcIceCandidate",
+  "RtcIceCandidateInit",
+  "RtcIceConnectionState",
+  "RtcIceGatheringState",
+  "RtcIceServer",
+  "RtcPeerConnection",
+  "RtcPeerConnectionIceEvent",
+  "RtcSdpType",
+  "RtcSessionDescription",
+  "RtcSessionDescriptionInit",
+  "RtcSignalingState",
+  "WebSocket",
+  "Window",
+] }
+
+
 [dev-dependencies]
 pretty_env_logger = "0.4.0"
 tempfile = "3.3.0"
+
+[target."cfg(target_arch = \"wasm32\")".dev-dependencies]
+# enable the js feature in getrandom (see https://docs.rs/getrandom/latest/getrandom/#webassembly-support).
+getrandom = { version = "0.2", features = ["js"] }
 
 [build-dependencies]
 prost-build = "0.9.0"

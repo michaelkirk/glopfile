@@ -3,7 +3,7 @@ use std::ops::ControlFlow::{self, Break, Continue};
 use std::path::Path;
 use std::thread;
 
-use bytes::BytesMut;
+use bytes::Bytes;
 use prost::Message;
 use url::Url;
 
@@ -69,26 +69,45 @@ impl UploaderClient {
     }
 
     pub fn upload_provisioned_file(&self, provisioned_file: ProvisionedFile) -> Result<()> {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+
         let encrypted_file = self.api_client.encrypt_file(provisioned_file.file);
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
-        let websocket = self.api_client.connect_upload_websocket(
-            &provisioned_file.upload_path,
-            move |message| match message.inner {
-                Some(web_socket_message::Inner::RtcSignaling(message)) => signaling_message_handler
-                    .handle(message)
-                    .map(Continue)
-                    .unwrap_or(Break(())),
-                None => {
-                    // Unfortunately, with prost there's no way to log about what message type this actually was.
-                    warn!("unhandled websocket message type");
-                    Continue(())
-                }
-            },
-        )?;
+        let websocket = runtime.block_on(async {
+            self.api_client
+                .connect_upload_websocket(&provisioned_file.upload_path, move |message| {
+                    match message.inner {
+                        Some(web_socket_message::Inner::RtcSignaling(message)) => {
+                            signaling_message_handler
+                                .handle(message)
+                                .map(Continue)
+                                .unwrap_or(Break(()))
+                        }
+                        None => {
+                            // Unfortunately, with prost there's no way to log about what message type this actually was.
+                            warn!("unhandled websocket message type");
+                            Continue(())
+                        }
+                    }
+                })
+                .await
+        })?;
         let mut state = UploadState { encrypted_file: encrypted_file.clone() };
-        p2p_client.set_websocket(websocket)?;
-        thread::spawn(move || p2p_client.transfer(&mut state, None).unwrap());
+        thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime
+                .block_on(async {
+                    p2p_client.set_websocket(websocket).await?;
+                    p2p_client.transfer(&mut state, None).await
+                })
+                .unwrap();
+        });
         self.api_client
             .upload_file(encrypted_file, &provisioned_file.upload_path)
     }
@@ -121,7 +140,7 @@ impl PeerToPeerClientHandler for UploadState {
     fn data_channel_message(
         &mut self,
         client: &mut PeerToPeerClient,
-        message_data: BytesMut,
+        message_data: Bytes,
     ) -> Result<ControlFlow<()>> {
         let Self { encrypted_file } = self;
         let message = DownloaderMessage::decode(message_data).map_err(Error::rtc_err)?;

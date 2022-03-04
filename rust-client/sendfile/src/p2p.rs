@@ -1,52 +1,97 @@
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(target_arch = "wasm32")]
+mod web;
+
+use instant::{Duration, Instant};
 use std::collections::VecDeque;
 use std::ops::ControlFlow;
 use std::ops::ControlFlow::{Break, Continue};
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
 
-use bytes::BytesMut;
-use datachannel::{
-    DataChannelInit, RtcConfig, RtcDataChannel, RtcPeerConnection, SessionDescription,
-};
+use bytes::Bytes;
 use prost::Message;
 
+use crate::mpsc;
+use crate::websocket::WebSocketClient;
 use crate::websocket::{
-    rtc_signaling_message, web_socket_message, RtcSignalingMessage, WebSocketConnection,
-    WebSocketMessage,
+    rtc_signaling_message, web_socket_message, IceCandidate, RtcSignalingMessage,
+    SessionDescription, SessionDescriptionType, WebSocketMessage,
 };
 use crate::Error;
 
 use self::protocol::{downloader_message, uploader_message, DownloaderMessage, UploaderMessage};
 
-pub(crate) struct PeerToPeerClient {
-    peer_connection: Box<RtcPeerConnection<PeerConnectionHandler>>,
-    data_channel: Box<RtcDataChannel<DataChannelHandler>>,
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        pub type DefaultRtc = web::WebRtc;
+    } else {
+        pub type DefaultRtc = native::NativeRtc;
+    }
+}
+
+pub struct PeerToPeerClient<RtcTy: Rtc = DefaultRtc> {
+    peer_connection: RtcTy::PeerConnection,
+    data_channel: <RtcTy::PeerConnection as RtcPeerConnection>::DataChannel,
     signaling: SignalingWebSocket,
     signaling_handler: SignalingMessageHandler,
     rx: mpsc::Receiver<PeerToPeerClientEvent>,
 }
 
 #[derive(Clone)]
-pub(crate) struct SignalingMessageHandler {
+pub struct SignalingMessageHandler {
     tx: mpsc::Sender<PeerToPeerClientEvent>,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 #[error("PeerToPeerClient dropped")]
-pub(crate) struct SignalingMessageHandlerError;
+pub struct SignalingMessageHandlerError;
 
-pub(crate) trait PeerToPeerClientHandler {
+pub trait Rtc {
+    type PeerConnection: RtcPeerConnection;
+
+    fn new_peer_connection(
+        stun_servers: &[&str],
+        tx: mpsc::Sender<PeerToPeerClientEvent>,
+    ) -> Result<Self::PeerConnection, Error>;
+}
+
+#[async_trait::async_trait(?Send)]
+pub trait RtcPeerConnection {
+    type DataChannel: RtcDataChannel;
+
+    fn new_data_channel(
+        &mut self,
+        id: u16,
+        label: &str,
+        tx: mpsc::Sender<PeerToPeerClientEvent>,
+    ) -> Result<Self::DataChannel, Error>;
+
+    async fn create_offer(&mut self) -> Result<(), Error>;
+    async fn create_answer(&mut self) -> Result<(), Error>;
+    async fn set_remote_description(
+        &mut self,
+        description: SessionDescription,
+    ) -> Result<(), Error>;
+    fn local_description_type(&self) -> Option<SessionDescriptionType>;
+    async fn add_remote_candidate(&mut self, candidate: IceCandidate) -> Result<(), Error>;
+}
+
+pub trait RtcDataChannel {
+    fn send(&mut self, message: &[u8]) -> Result<(), Error>;
+}
+
+pub trait PeerToPeerClientHandler<RtcTy: Rtc = DefaultRtc> {
     fn data_channel_opened(
         &mut self,
-        _client: &mut PeerToPeerClient,
+        _client: &mut PeerToPeerClient<RtcTy>,
     ) -> Result<ControlFlow<()>, Error> {
         Ok(Continue(()))
     }
 
     fn data_channel_message(
         &mut self,
-        client: &mut PeerToPeerClient,
-        message_data: BytesMut,
+        client: &mut PeerToPeerClient<RtcTy>,
+        message_data: Bytes,
     ) -> Result<ControlFlow<()>, Error>;
 }
 
@@ -54,25 +99,18 @@ pub(crate) trait PeerToPeerClientHandler {
 #[error("RTC thread died")]
 pub(crate) struct RTCThreadDiedError;
 
-struct PeerConnectionHandler {
-    tx: mpsc::Sender<PeerToPeerClientEvent>,
-}
-
-struct DataChannelHandler {
-    tx: mpsc::Sender<PeerToPeerClientEvent>,
-}
-
-enum PeerToPeerClientEvent {
+#[allow(dead_code)] // inhibit "variant is never constructed" warnings when no implementation is compiled
+pub enum PeerToPeerClientEvent {
     OutgoingSignalingMessage(RtcSignalingMessage),
     IncomingSignalingMessage(RtcSignalingMessage),
     DataChannelOpened,
-    DataChannelError(String),
-    DataChannelMessage(BytesMut),
+    DataChannelError(Box<dyn std::error::Error + Send + Sync + 'static>),
+    DataChannelMessage(Bytes),
 }
 
 #[derive(Default)]
 struct SignalingWebSocket {
-    websocket: Option<WebSocketConnection>,
+    websocket: Option<WebSocketClient>,
     pending: VecDeque<WebSocketMessage>,
 }
 
@@ -89,25 +127,13 @@ const DATA_CHANNEL_LABEL: &str = "sendfile";
 const DATA_CHANNEL_ID: u16 = 0;
 const STUN_SERVERS: &[&str] = &["stun:stun.l.google.com:19302"];
 
-impl PeerToPeerClient {
+impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
     pub fn new() -> Result<Self, Error> {
         let (tx, rx) = mpsc::channel();
 
-        let peer_connection_handler = PeerConnectionHandler { tx: tx.clone() };
-        let data_channel_handler = DataChannelHandler { tx: tx.clone() };
-
-        let mut rtc_config = RtcConfig::new(STUN_SERVERS);
-        rtc_config.disable_auto_negotiation = true;
-        let mut peer_connection =
-            RtcPeerConnection::new(&rtc_config, peer_connection_handler).map_err(Error::rtc_err)?;
-
-        let data_channel_init = DataChannelInit::default()
-            .negotiated()
-            .manual_stream()
-            .stream(DATA_CHANNEL_ID);
-        let data_channel = peer_connection
-            .create_data_channel_ex(DATA_CHANNEL_LABEL, data_channel_handler, &data_channel_init)
-            .map_err(Error::rtc_err)?;
+        let mut peer_connection = RtcTy::new_peer_connection(STUN_SERVERS, tx.clone())?;
+        let data_channel =
+            peer_connection.new_data_channel(DATA_CHANNEL_ID, DATA_CHANNEL_LABEL, tx.clone())?;
 
         Ok(Self {
             peer_connection,
@@ -122,35 +148,33 @@ impl PeerToPeerClient {
         self.signaling_handler.clone()
     }
 
-    pub fn create_offer(&mut self) -> Result<(), Error> {
+    pub async fn create_offer(&mut self) -> Result<(), Error> {
         debug!("creating RTC offer");
-        self.peer_connection
-            .set_local_description(datachannel::SdpType::Offer)
-            .map_err(Error::rtc_err)
+        self.peer_connection.create_offer().await
     }
 
-    pub fn set_websocket(&mut self, websocket: WebSocketConnection) -> Result<(), Error> {
+    pub async fn set_websocket(&mut self, websocket: WebSocketClient) -> Result<(), Error> {
         self.signaling.websocket = Some(websocket);
-        self.signaling.flush()
+        self.signaling.flush().await
     }
 
-    pub fn transfer(
+    pub async fn transfer(
         &mut self,
-        handler: &mut impl PeerToPeerClientHandler,
+        handler: &mut impl PeerToPeerClientHandler<RtcTy>,
         timeout: Option<Duration>,
     ) -> Result<(), Error> {
         let mut inactivity_timeout = timeout.map(Timeout::new);
         loop {
             let handler_message = match &inactivity_timeout {
                 Some(timeout) => {
-                    let handler_rx_res = self.rx.recv_timeout(timeout.remaining()?);
+                    let handler_rx_res = self.rx.recv_timeout(timeout.remaining()?).await;
                     handler_rx_res.map_err(|error| match error {
                         mpsc::RecvTimeoutError::Disconnected => Error::rtc_err(RTCThreadDiedError),
                         mpsc::RecvTimeoutError::Timeout => Error::Timeout,
                     })?
                 }
                 None => {
-                    let handler_rx_res = self.rx.recv();
+                    let handler_rx_res = self.rx.recv().await;
                     handler_rx_res.map_err(|mpsc::RecvError| Error::rtc_err(RTCThreadDiedError))?
                 }
             };
@@ -159,12 +183,13 @@ impl PeerToPeerClient {
                 PeerToPeerClientEvent::OutgoingSignalingMessage(message) => {
                     debug!("sending RTC signaling message: {message:?}");
                     self.signaling
-                        .send(web_socket_message::Inner::RtcSignaling(message).into())?;
+                        .send(web_socket_message::Inner::RtcSignaling(message).into())
+                        .await?;
                 }
 
                 PeerToPeerClientEvent::IncomingSignalingMessage(message) => {
                     debug!("received RTC signaling message: {message:?}");
-                    self.handle_incoming_signaling_message(message)?;
+                    self.handle_incoming_signaling_message(message).await?;
                 }
 
                 PeerToPeerClientEvent::DataChannelOpened => {
@@ -191,38 +216,30 @@ impl PeerToPeerClient {
         Ok(())
     }
 
-    fn handle_incoming_signaling_message(
+    async fn handle_incoming_signaling_message(
         &mut self,
         message: RtcSignalingMessage,
     ) -> Result<(), Error> {
         match message.inner {
             Some(rtc_signaling_message::Inner::SessionDescription(remote_description)) => {
-                let local_description = self.peer_connection.local_description();
-                let local_description_type = local_description.as_ref().map(|sdp| &sdp.sdp_type);
+                let local_description_type = self.peer_connection.local_description_type();
+                let remote_description_type = remote_description.sdp_type();
 
-                let remote_description: Result<SessionDescription, _> =
-                    remote_description.try_into();
-                let remote_description = remote_description
-                    .map_err(|error| Error::InvalidPeerMessage { source: error.into() })?;
-                let remote_description_type = &remote_description.sdp_type;
-
-                use datachannel::SdpType::{Answer, Offer, Pranswer, Rollback};
+                use SessionDescriptionType::{Answer, Offer, Pranswer, Rollback};
                 match (local_description_type, remote_description_type) {
                     // receive an offer when we haven't sent one
                     (_local @ None, _remote @ Offer) => {
                         self.peer_connection
-                            .set_remote_description(&remote_description)
-                            .map_err(Error::rtc_err)?;
-                        self.peer_connection
-                            .set_local_description(datachannel::SdpType::Answer)
-                            .map_err(Error::rtc_err)?;
+                            .set_remote_description(remote_description)
+                            .await?;
+                        self.peer_connection.create_answer().await?;
                     }
 
                     // receive an answer to an offer we sent
                     (_local @ Some(Offer), _remote @ Answer) => {
                         self.peer_connection
-                            .set_remote_description(&remote_description)
-                            .map_err(Error::rtc_err)?;
+                            .set_remote_description(remote_description)
+                            .await?;
                     }
 
                     // receive a non-offer message when we haven't sent one
@@ -248,9 +265,7 @@ impl PeerToPeerClient {
                 }
             }
             Some(rtc_signaling_message::Inner::IceCandidate(ice_candidate)) => {
-                self.peer_connection
-                    .add_remote_candidate(&ice_candidate.into())
-                    .map_err(Error::rtc_err)?;
+                self.peer_connection.add_remote_candidate(ice_candidate).await?;
             }
             None => {
                 // Unfortunately, with prost there's no way to log about what message type this actually was.
@@ -266,9 +281,7 @@ impl PeerToPeerClient {
     ) -> Result<(), Error> {
         let message = DownloaderMessage { inner: Some(message_inner) };
         let encoded_message = message.encode_to_vec();
-        self.data_channel
-            .send(&encoded_message)
-            .map_err(Error::rtc_err)?;
+        self.data_channel.send(&encoded_message)?;
         Ok(())
     }
 
@@ -278,133 +291,34 @@ impl PeerToPeerClient {
     ) -> Result<(), Error> {
         let message = UploaderMessage { inner: Some(message_inner) };
         let encoded_message = message.encode_to_vec();
-        self.data_channel
-            .send(&encoded_message)
-            .map_err(Error::rtc_err)?;
+        self.data_channel.send(&encoded_message)?;
         Ok(())
     }
 }
 
 impl SignalingMessageHandler {
-    pub(crate) fn handle(
-        &self,
-        message: RtcSignalingMessage,
-    ) -> Result<(), SignalingMessageHandlerError> {
+    pub fn handle(&self, message: RtcSignalingMessage) -> Result<(), SignalingMessageHandlerError> {
         self.tx
             .send(PeerToPeerClientEvent::IncomingSignalingMessage(message))
             .map_err(|_| SignalingMessageHandlerError)
     }
 }
 
-struct NoopDataChannelHandler;
-impl datachannel::DataChannelHandler for NoopDataChannelHandler {}
-
-impl datachannel::PeerConnectionHandler for PeerConnectionHandler {
-    type DCH = NoopDataChannelHandler;
-
-    fn data_channel_handler(&mut self) -> Self::DCH {
-        NoopDataChannelHandler
-    }
-
-    fn on_description(&mut self, session_description: datachannel::SessionDescription) {
-        debug!("new RTC session description: {session_description:?}");
-        let signaling_message = RtcSignalingMessage {
-            inner: Some(rtc_signaling_message::Inner::SessionDescription(
-                session_description.into(),
-            )),
-        };
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::OutgoingSignalingMessage(
-                signaling_message,
-            ));
-    }
-
-    fn on_candidate(&mut self, candidate: datachannel::IceCandidate) {
-        debug!("new RTC ice candidate: {candidate:?}");
-        let signaling_message = RtcSignalingMessage {
-            inner: Some(rtc_signaling_message::Inner::IceCandidate(candidate.into())),
-        };
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::OutgoingSignalingMessage(
-                signaling_message,
-            ));
-    }
-
-    fn on_connection_state_change(&mut self, state: datachannel::ConnectionState) {
-        debug!("RTC connection state changed: {state:?}");
-    }
-
-    fn on_gathering_state_change(&mut self, state: datachannel::GatheringState) {
-        debug!("RTC candidate gathering state changed: {state:?}");
-    }
-
-    fn on_signaling_state_change(&mut self, state: datachannel::SignalingState) {
-        debug!("RTC signaling state changed: {state:?}");
-    }
-
-    fn on_data_channel(&mut self, data_channel: Box<RtcDataChannel<Self::DCH>>) {
-        let stream = data_channel.stream();
-        let label = data_channel.label();
-        panic!("unexpected RTC data channel stream {stream} received: {label}");
-    }
-}
-
-impl datachannel::DataChannelHandler for DataChannelHandler {
-    fn on_open(&mut self) {
-        debug!("RTC data channel opened");
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self.tx.send(PeerToPeerClientEvent::DataChannelOpened);
-    }
-
-    fn on_closed(&mut self) {
-        debug!("RTC data channel closed");
-    }
-
-    fn on_error(&mut self, error: &str) {
-        debug!("RTC data channel error: {error}");
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::DataChannelError(error.into()));
-    }
-
-    fn on_message(&mut self, msg: &[u8]) {
-        let len = msg.len();
-        debug!("RTC data channel message received of len {len}");
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::DataChannelMessage(msg.into()));
-    }
-
-    fn on_buffered_amount_low(&mut self) {
-        debug!("RTC data channel buffer now empty");
-    }
-
-    fn on_available(&mut self) {
-        debug!("RTC data channel now has available data");
-    }
-}
-
 impl SignalingWebSocket {
-    fn flush(&mut self) -> Result<(), Error> {
+    async fn flush(&mut self) -> Result<(), Error> {
         if let Some(websocket) = &mut self.websocket {
             while let Some(pending) = self.pending.front() {
-                websocket.send(pending)?;
+                websocket.send(pending).await?;
                 self.pending.pop_front();
             }
         }
         Ok(())
     }
 
-    fn send(&mut self, message: WebSocketMessage) -> Result<(), Error> {
-        self.flush()?;
+    async fn send(&mut self, message: WebSocketMessage) -> Result<(), Error> {
+        self.flush().await?;
         let result = match &mut self.websocket {
-            Some(websocket) => match websocket.send(&message) {
+            Some(websocket) => match websocket.send(&message).await {
                 Ok(()) => return Ok(()),
                 Err(error) => {
                     self.websocket = None;
@@ -414,7 +328,7 @@ impl SignalingWebSocket {
             None => Ok(()),
         };
         self.pending.push_back(message);
-        result
+        result.map_err(Into::into)
     }
 }
 

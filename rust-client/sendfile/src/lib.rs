@@ -1,24 +1,36 @@
 #[macro_use]
 extern crate log;
 
-mod api_client;
-mod cipher;
-mod downloader_client;
 mod error;
+mod mpsc;
 mod p2p;
-mod uploader_client;
-mod url_safe_base64;
+mod util;
 mod websocket;
 
-pub use api_client::DownloadId;
-pub use downloader_client::DownloaderClient;
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        pub use p2p::{PeerToPeerClient, PeerToPeerClientEvent, PeerToPeerClientHandler};
+        pub use p2p::protocol::*;
+        pub use websocket::{DefaultWebSocketConnection, WebSocketClient};
+        pub use websocket::protocol::*;
+    } else {
+        mod api_client;
+        mod cipher;
+        mod downloader_client;
+        mod uploader_client;
+        mod url_safe_base64;
+
+        pub use api_client::DownloadId;
+        pub use downloader_client::DownloaderClient;
+        pub use uploader_client::{ProvisionedFile, UploaderClient};
+
+        use api_client::ApiClient;
+        use cipher::CipherKey;
+    }
+}
+
 pub use error::Error;
-pub use uploader_client::{ProvisionedFile, UploaderClient};
-
-use api_client::ApiClient;
-use cipher::CipherKey;
-
-type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 fn init_test_logging() {
@@ -29,7 +41,7 @@ fn init_test_logging() {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use std::{fs, path::Path, time::Duration};
