@@ -25,16 +25,16 @@ class Base64 {
     const base64 = Base64.bodyEncode(buffer);
 
     // replace the non-url safe chars
-    return base64.replace("+", "-").replace("/", "_").replace("=", "~");
+    return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "~");
   }
 
   // base64 deeoding from a url safe alphabet
   static urlSafeDecode(urlSafeBase64: string): ArrayBuffer {
     // reverse the url safe characters back to conventional base64
     let base64 = urlSafeBase64
-      .replace("-", "+")
-      .replace("_", "/")
-      .replace("~", "=");
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .replace(/~/g, "=");
 
     return Base64.bodyDecode(base64);
   }
