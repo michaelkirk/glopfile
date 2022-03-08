@@ -133,7 +133,10 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
 
   formattedDownloadProgress(): string {
     if (this.state.progress) {
-      const percent = 100.0 * this.state.progress.ratio();
+      // a little bit of overhead from encryption leads to slightly more than
+      // 1.0 ratio.
+      const ratio = Math.min(1.0, this.state.progress.ratio());
+      const percent = 100.0 * ratio;
       return `${percent.toFixed(1)}%`;
     } else {
       return "";
