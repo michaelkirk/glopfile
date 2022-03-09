@@ -194,8 +194,7 @@ handle_cast(Message, State) ->
 
 handle_info({'DOWN', _Mon, process, Pid, Info}, #state{downloader = #downloader{pid = Pid}}=State) ->
     ?LOG_DEBUG("downloader stopped: ~p", [Info]),
-    NewState = handle_downloader_disconnected(State),
-    {noreply, NewState};
+    handle_downloader_disconnected(State, Info);
 
 handle_info({'DOWN', _Mon, process, Pid, Info}, #state{downloader_ws = #downloader_ws{pid = Pid}}=State) ->
     ?LOG_DEBUG("downloader websocket stopped: ~p", [Info]),
@@ -216,8 +215,8 @@ handle_info(Message, State) ->
     ?LOG_WARNING("unknown message: ~p", [Message]),
     {noreply, State}.
 
-terminate(_Reason, State) ->
-    ?LOG_DEBUG("session stopping: ~p", [State#state.id]),
+terminate(Reason, State) ->
+    ?LOG_DEBUG("session stopping: ~p, reason: ~p", [State#state.id, Reason]),
     sendfile_session_table:delete(State#state.id),
     ok.
 
@@ -397,10 +396,15 @@ handle_uploader_ws_disconnected(State) ->
     State#state{uploader_ws = undefined}.
 
 
--spec handle_downloader_disconnected(state()) -> state().
-handle_downloader_disconnected(State) ->
-    State#state{downloader = undefined}.
+-spec handle_downloader_disconnected(state(), any()) -> handle_cast_result().
 
+handle_downloader_disconnected(State, normal) ->
+    NewState = State#state{downloader = undefined},
+    {stop, normal, NewState};
+
+handle_downloader_disconnected(State, _Info) ->
+    NewState = State#state{downloader = undefined},
+    {noreply, NewState}.
 
 -spec handle_downloader_ws_disconnected(state()) -> state().
 handle_downloader_ws_disconnected(State) ->
