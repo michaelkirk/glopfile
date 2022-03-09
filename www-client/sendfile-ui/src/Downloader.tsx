@@ -1,5 +1,5 @@
 import React from "react";
-import { ReceiverClient, DownloadMeta } from "sendfile";
+import { ReceiverClient, DownloadMeta, NotFoundError } from "sendfile";
 
 class DownloaderState {
   receiverClient?: Promise<ReceiverClient>;
@@ -75,7 +75,14 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
             this.setState({ downloadMeta });
           })
           .catch((err) => {
-            this.setState({ errorText: err.message });
+            if (err instanceof NotFoundError) {
+              this.setState({
+                statusText:
+                  "This link is expired or invalid. Ask the sender to re-upload and send you a new link.",
+              });
+            } else {
+              this.setState({ errorText: err.message });
+            }
           });
       });
     }

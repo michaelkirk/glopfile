@@ -1,5 +1,6 @@
-import { CipherKey, ContentCipher } from "./cipher";
 import Base64 from "./Base64";
+import { CipherKey, ContentCipher } from "./cipher";
+import { NotFoundError } from "./error";
 
 export class APIClient {
   cipherKey: CipherKey;
@@ -71,6 +72,13 @@ export class APIClient {
     // TODO: do we need to verify success in js?
     const downloadPath = `/api/v1/download/${downloadId}`;
     const response = await fetch(this.url(downloadPath));
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new NotFoundError();
+      } else {
+        throw new Error("Error fetching file metadata");
+      }
+    }
     const json = await response.json();
 
     const encryptedContentURL = json.encrypted_content_url;
