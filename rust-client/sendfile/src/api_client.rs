@@ -161,10 +161,11 @@ impl ApiClient {
                 status: response.status().as_u16(),
             });
         } else {
-            debug!("fetched content successfully");
+            debug!("received successful response headers");
         }
 
         use io::Write;
+        debug!("waiting on response body");
         decrypted_file.write_all(&response.bytes()?)?;
         decrypted_file.flush()?;
 

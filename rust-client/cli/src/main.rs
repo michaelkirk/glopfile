@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use clap::{AppSettings, Parser, Subcommand};
-use sendfile::{DownloaderClient, UploaderClient};
+use sendfile::{DownloaderClient, Transport, UploaderClient};
 use url::Url;
 
 #[derive(Parser)]
@@ -29,6 +29,15 @@ enum Commands {
         /// The base of the generated download link. If unspecified, a default will be used.
         #[clap(short, long)]
         download_endpoint: Option<Url>,
+
+        /// Do not try to send content to the downloader via a peer connection; only use the relay.
+        #[clap(long)]
+        no_p2p: bool,
+
+        /// Do not try to send content via the relay; only use the peer connection. Note that
+        /// encrypted metadata will still be sent via the service.
+        #[clap(long)]
+        no_relay: bool,
     },
 
     /// Downloads a file being sent by another user
@@ -40,6 +49,15 @@ enum Commands {
         /// The API service used to coordinate file transfer. If unspecified, a default will be used.
         #[clap(short, long)]
         api_endpoint: Option<Url>,
+
+        /// Do not try to receive content from the sender via a peer connection; only use the relay.
+        #[clap(long)]
+        no_p2p: bool,
+
+        /// Do not try to receive content via the relay; only use the peer connection. Note that
+        /// encrypted metadata will still be received via the service.
+        #[clap(long)]
+        no_relay: bool,
     },
 }
 
@@ -48,11 +66,15 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     match &args.command {
-        Commands::Send { path, api_endpoint, download_endpoint } => {
-            Cli::send(path, api_endpoint.as_ref(), download_endpoint.as_ref())
-        }
-        Commands::Receive { download_link, api_endpoint } => {
-            Cli::receive(download_link, api_endpoint.as_ref())
+        Commands::Send { path, api_endpoint, download_endpoint, no_p2p, no_relay } => Cli::send(
+            path,
+            api_endpoint.as_ref(),
+            download_endpoint.as_ref(),
+            *no_p2p,
+            *no_relay,
+        ),
+        Commands::Receive { download_link, api_endpoint, no_p2p, no_relay } => {
+            Cli::receive(download_link, api_endpoint.as_ref(), *no_p2p, *no_relay)
         }
     }
 }
@@ -63,6 +85,8 @@ impl Cli {
         path: &Path,
         api_endpoint: Option<&Url>,
         download_endpoint: Option<&Url>,
+        no_p2p: bool,
+        no_relay: bool,
     ) -> Result<()> {
         let default_api_endpoint =
             Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
@@ -74,7 +98,10 @@ impl Cli {
             .unwrap_or(&default_download_endpoint)
             .clone();
 
-        let send_client = UploaderClient::new(api_endpoint, download_endpoint);
+        let transport = Transport::with_p2p_and_relay(!no_p2p, !no_relay)
+            .ok_or(anyhow!("cannot disable both p2p and relay"))?;
+
+        let send_client = UploaderClient::new(api_endpoint, download_endpoint, transport);
 
         let provisioned_file = send_client.provision_file(path)?;
 
@@ -87,12 +114,21 @@ impl Cli {
         Ok(())
     }
 
-    fn receive(download_url: &str, api_endpoint: Option<&Url>) -> Result<()> {
+    fn receive(
+        download_url: &str,
+        api_endpoint: Option<&Url>,
+        no_p2p: bool,
+        no_relay: bool,
+    ) -> Result<()> {
         let default_api_endpoint =
             Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
-        let downloader_client = DownloaderClient::from_download_url(download_url, api_endpoint)?;
+        let transport = Transport::with_p2p_and_relay(!no_p2p, !no_relay)
+            .ok_or(anyhow!("cannot disable both p2p and relay"))?;
+
+        let downloader_client =
+            DownloaderClient::from_download_url(download_url, api_endpoint, transport)?;
         downloader_client.download(Some(Duration::from_secs(5)))?;
         println!("Downloaded file.");
 

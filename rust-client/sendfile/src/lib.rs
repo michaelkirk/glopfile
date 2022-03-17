@@ -4,6 +4,7 @@ extern crate log;
 mod error;
 mod mpsc;
 mod p2p;
+mod transport;
 mod util;
 mod websocket;
 
@@ -28,6 +29,8 @@ cfg_if::cfg_if! {
         use cipher::CipherKey;
     }
 }
+
+pub use transport::Transport;
 
 pub use error::Error;
 pub type Result<T> = std::result::Result<T, Error>;

@@ -14,23 +14,24 @@ use crate::p2p::protocol::{
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
 use crate::websocket::web_socket_message;
-use crate::{ApiClient, CipherKey, DownloadId, Error, Result};
+use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
 pub struct UploaderClient {
     api_client: ApiClient,
     download_endpoint: Url,
+    transport: Transport,
 }
 
 impl UploaderClient {
-    pub fn new(api_endpoint: Url, download_endpoint: Url) -> Self {
+    pub fn new(api_endpoint: Url, download_endpoint: Url, transport: Transport) -> Self {
         let api_client = ApiClient::new(api_endpoint, CipherKey::random());
-        Self { api_client, download_endpoint }
+        Self { api_client, download_endpoint, transport }
     }
 
     pub fn new_testing() -> Self {
         let api_endpoint = Url::parse("http://localhost:8080").expect("invalid hardcoded url");
         let download_endpoint = Url::parse("http://localhost:3000").expect("invalid hardcoded url");
-        Self::new(api_endpoint, download_endpoint)
+        Self::new(api_endpoint, download_endpoint, Transport::Both)
     }
 
     pub fn provision_file(&self, path: &Path) -> Result<ProvisionedFile> {
@@ -69,16 +70,38 @@ impl UploaderClient {
     }
 
     pub fn upload_provisioned_file(&self, provisioned_file: ProvisionedFile) -> Result<()> {
+        let encrypted_file = self.api_client.encrypt_file(provisioned_file.file);
+        let upload_path = provisioned_file.upload_path;
+        match self.transport {
+            Transport::Both => {
+                let _ = self.p2p_transfer(encrypted_file.clone(), &upload_path);
+                self.api_client.upload_file(encrypted_file, &upload_path)
+            }
+            Transport::P2P => {
+                let p2p_thread = self.p2p_transfer(encrypted_file, &upload_path)?;
+                let p2p_thread_result = p2p_thread
+                    .join()
+                    .expect("p2p thread panicked without returning result");
+                p2p_thread_result
+            }
+            Transport::Relay => self.api_client.upload_file(encrypted_file, &upload_path),
+        }
+    }
+
+    fn p2p_transfer(
+        &self,
+        encrypted_file: EncryptedFile,
+        upload_path: &str,
+    ) -> Result<std::thread::JoinHandle<Result<()>>> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
 
-        let encrypted_file = self.api_client.encrypt_file(provisioned_file.file);
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
         let websocket = runtime.block_on(async {
             self.api_client
-                .connect_upload_websocket(&provisioned_file.upload_path, move |message| {
+                .connect_upload_websocket(upload_path, move |message| {
                     match message.inner {
                         Some(web_socket_message::Inner::RtcSignaling(message)) => {
                             signaling_message_handler
@@ -95,21 +118,18 @@ impl UploaderClient {
                 })
                 .await
         })?;
-        let mut state = UploadState { encrypted_file: encrypted_file.clone() };
-        thread::spawn(move || {
+
+        let mut state = UploadState { encrypted_file };
+        Ok(thread::spawn(move || {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
-                .build()
-                .unwrap();
+                .build()?;
             runtime
                 .block_on(async {
                     p2p_client.set_websocket(websocket).await?;
                     p2p_client.transfer(&mut state, None).await
                 })
-                .unwrap();
-        });
-        self.api_client
-            .upload_file(encrypted_file, &provisioned_file.upload_path)
+        }))
     }
 }
 

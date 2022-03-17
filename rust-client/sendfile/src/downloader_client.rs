@@ -18,28 +18,32 @@ use crate::p2p::protocol::{
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
 use crate::websocket::web_socket_message;
-use crate::{ApiClient, CipherKey, DownloadId, Error, Result};
+use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
 pub struct DownloaderClient {
     api_client: ApiClient,
     download_id: DownloadId,
     output_dir: Option<PathBuf>,
+    transport: Transport,
 }
 
 const CHUNK_SIZE: u64 = 16384;
 
 impl DownloaderClient {
-    pub fn from_download_url(download_url_str: &str, api_endpoint: Url) -> Result<Self> {
+    pub fn from_download_url(
+        download_url_str: &str,
+        api_endpoint: Url,
+        transport: Transport,
+    ) -> Result<Self> {
         let (download_id, cipher_key) = Self::parse_download_url(download_url_str)?;
 
         let api_client = ApiClient::new(api_endpoint, cipher_key);
-        Ok(Self { api_client, download_id, output_dir: None })
+        Ok(Self { api_client, download_id, output_dir: None, transport })
     }
-
     #[cfg(test)]
     pub fn from_testing_download_url(download_url_str: &str) -> Result<Self> {
         let api_endpoint = Url::parse("http://localhost:8080").expect("invalid hardcoded url");
-        Self::from_download_url(download_url_str, api_endpoint)
+        Self::from_download_url(download_url_str, api_endpoint, Transport::Both)
     }
 
     #[cfg(test)]
@@ -48,9 +52,13 @@ impl DownloaderClient {
     }
 
     pub fn download(&self, p2p_timeout: Option<Duration>) -> Result<()> {
-        match self.download_p2p(p2p_timeout) {
-            Err(Error::Timeout) => self.download_relayed(),
-            result => result,
+        match self.transport {
+            Transport::Both => match self.download_p2p(p2p_timeout) {
+                Err(Error::Timeout) => self.download_relayed(),
+                result => result,
+            },
+            Transport::P2P => self.download_p2p(p2p_timeout),
+            Transport::Relay => self.download_relayed(),
         }
     }
 
