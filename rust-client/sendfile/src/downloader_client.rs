@@ -59,7 +59,9 @@ impl DownloaderClient {
         let decrypted_file = self
             .api_client
             .decrypted_file(&meta, self.output_dir.as_deref());
-        self.api_client.download_content(&meta, decrypted_file)
+        let result = self.api_client.download_content(&meta, decrypted_file);
+        info!("successfully completed relayed file transfer");
+        result
     }
 
     pub fn download_p2p(&self, timeout: Option<Duration>) -> Result<()> {
@@ -105,6 +107,7 @@ impl DownloaderClient {
             p2p_client.transfer(&mut state, timeout).await
         })?;
 
+        info!("successfully completed p2p file transfer");
         self.api_client.finish_download(&meta)?;
         Ok(())
     }
