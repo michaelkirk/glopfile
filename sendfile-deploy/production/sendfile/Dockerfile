@@ -19,6 +19,9 @@ COPY --chown=erlang:erlang bin/start.sh /home/erlang/bin/
 
 RUN chmod 400 /home/erlang/.erlang.cookie
 
+COPY --chown=erlang:erlang hosts.erlang /home/erlang/.hosts.erlang
+RUN chmod 400 /home/erlang/.hosts.erlang
+
 ENTRYPOINT [ "/home/erlang/bin/start.sh", "/usr/local/bin/erl", "-config", "config/sys.config", "-s", "sendfile_app" ]
 
 CMD [ "-noinput", "-name", "sendfile" ]
