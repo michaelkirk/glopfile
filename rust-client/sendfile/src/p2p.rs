@@ -80,15 +80,16 @@ pub trait RtcDataChannel {
     fn send(&mut self, message: &[u8]) -> Result<(), Error>;
 }
 
+#[async_trait::async_trait(?Send)]
 pub trait PeerToPeerClientHandler<RtcTy: Rtc = DefaultRtc> {
-    fn data_channel_opened(
+    async fn data_channel_opened(
         &mut self,
         _client: &mut PeerToPeerClient<RtcTy>,
     ) -> Result<ControlFlow<()>, Error> {
         Ok(Continue(()))
     }
 
-    fn data_channel_message(
+    async fn data_channel_message(
         &mut self,
         client: &mut PeerToPeerClient<RtcTy>,
         message_data: Bytes,
@@ -194,7 +195,7 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 
                 PeerToPeerClientEvent::DataChannelOpened => {
                     debug!("RTC data channel opened");
-                    if let Break(()) = handler.data_channel_opened(self)? {
+                    if let Break(()) = handler.data_channel_opened(self).await? {
                         break;
                     }
                 }
@@ -207,7 +208,7 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 
                 PeerToPeerClientEvent::DataChannelMessage(message_data) => {
                     inactivity_timeout.as_mut().map(Timeout::reset);
-                    if let Break(()) = handler.data_channel_message(self, message_data)? {
+                    if let Break(()) = handler.data_channel_message(self, message_data).await? {
                         break;
                     }
                 }

@@ -1,4 +1,4 @@
-use js_sys::JSON;
+use js_sys::{JSON, JsString};
 use js_sys::{Array, ArrayBuffer, Uint8Array};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -77,7 +77,7 @@ impl super::Rtc for WebRtc {
         let stun_servers = stun_servers.into_iter();
         let stun_servers = stun_servers.map(|url| {
             let mut stun_server = RtcIceServer::new();
-            stun_server.url(url);
+            stun_server.urls(&JsString::from(*url));
             stun_server
         });
 

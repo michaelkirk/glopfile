@@ -1,14 +1,33 @@
-use aes_gcm::aead::{Aead, NewAead};
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(target_arch = "wasm32")]
+mod web;
+
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        type DefaultCipher = web::WebCipher;
+    } else {
+        type DefaultCipher = native::NativeCipher;
+    }
+}
+
+use std::sync::Arc;
+
+use aes_gcm::aead::Payload;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
+use derive_more::Deref;
 use zeroize::ZeroizeOnDrop;
 
 use crate::url_safe_base64;
 use crate::{Error, Result};
 
-#[derive(ZeroizeOnDrop, Clone)]
+#[derive(Clone)]
 pub struct CipherKey {
-    bytes: [u8; 32],
+    bytes: Arc<CipherKeyBytes>,
 }
+
+#[derive(Deref, ZeroizeOnDrop)]
+struct CipherKeyBytes([u8; 32]);
 
 impl std::fmt::Debug for CipherKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
@@ -18,13 +37,25 @@ impl std::fmt::Debug for CipherKey {
     }
 }
 
+#[async_trait::async_trait(?Send)]
+trait Cipher {
+    async fn new(key: &Aes256GcmKey) -> Self
+    where
+        Self: Sized;
+    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Payload<'_, '_>) -> Vec<u8>;
+    async fn decrypt(&self, nonce: &Aes256GcmNonce, ciphertext: Payload<'_, '_>) -> Result<Vec<u8>>;
+}
+
+type Aes256GcmKey = Key<<Aes256Gcm as aes_gcm::NewAead>::KeySize>;
+type Aes256GcmNonce = Nonce<<Aes256Gcm as aes_gcm::AeadCore>::NonceSize>;
+
 impl CipherKey {
     pub fn random() -> Self {
-        Self { bytes: rand::random() }
+        Self { bytes: Arc::new(CipherKeyBytes(rand::random())) }
     }
 
     pub fn from_bytes(bytes: [u8; 32]) -> Self {
-        Self { bytes }
+        Self { bytes: Arc::new(CipherKeyBytes(bytes)) }
     }
 
     pub fn bytes(&self) -> &[u8; 32] {
@@ -47,12 +78,12 @@ impl CipherKey {
     }
 }
 
-pub(crate) struct ContentCipher<'a> {
-    cipher_key: &'a CipherKey,
+pub(crate) struct ContentCipher {
+    cipher_key: CipherKey,
 }
-impl<'a> ContentCipher<'a> {
-    pub fn new(cipher_key: &'a CipherKey) -> Self {
-        Self { cipher_key }
+impl ContentCipher {
+    pub fn new(cipher_key: &CipherKey) -> Self {
+        Self { cipher_key: cipher_key.clone() }
     }
 
     pub const fn extra_ciphertext_len() -> u64 {
@@ -60,56 +91,28 @@ impl<'a> ContentCipher<'a> {
         12 + 16
     }
 
-    fn cipher(&self) -> Aes256Gcm {
+    async fn cipher(&self) -> impl Cipher {
         let key = Key::from_slice(self.cipher_key.bytes());
-        Aes256Gcm::new(key)
+        DefaultCipher::new(key).await
     }
 
     // TODO: stream
-    pub fn encrypt(&self, input: &[u8]) -> Vec<u8> {
+    pub async fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
         let nonce_bytes: [u8; 12] = rand::random();
         let nonce = Nonce::from_slice(&nonce_bytes);
 
-        // TODO: handle invalid crypt
-        let mut ciphertext = self
-            .cipher()
-            .encrypt(nonce, input)
-            .expect("encryption failure");
+        let cipher = self.cipher().await;
+        let mut ciphertext = cipher.encrypt(nonce, plaintext.into()).await;
         let mut nonce_and_ciphertext = nonce.to_vec();
         nonce_and_ciphertext.append(&mut ciphertext);
         nonce_and_ciphertext
     }
 
-    pub fn decrypt(&self, nonce_and_ciphertext: &[u8]) -> Result<Vec<u8>> {
+    pub async fn decrypt(&self, nonce_and_ciphertext: &[u8]) -> Result<Vec<u8>> {
         let (nonce_bytes, ciphertext) = nonce_and_ciphertext.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        self.cipher()
-            .decrypt(nonce, ciphertext)
-            .map_err(|_| Error::InvalidInput("decryption error"))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn roundtrip() {
-        let cipher_key = CipherKey::random();
-        let cipher = ContentCipher::new(&cipher_key);
-        let plaintext = b"Hello World";
-        let ciphertext = cipher.encrypt(plaintext);
-        assert_eq!(plaintext.to_vec(), cipher.decrypt(&ciphertext).unwrap());
-    }
-
-    #[test]
-    fn bad_crypt() {
-        let cipher_key = CipherKey::random();
-        let cipher = ContentCipher::new(&cipher_key);
-        let plaintext = b"Hello World";
-        let mut ciphertext = cipher.encrypt(plaintext);
-        ciphertext[0] = ciphertext[0] + 1;
-        assert!(cipher.decrypt(&ciphertext).is_err());
+        let cipher = self.cipher().await;
+        cipher.decrypt(nonce, ciphertext.into()).await
     }
 }

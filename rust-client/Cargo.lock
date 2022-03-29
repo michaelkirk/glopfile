@@ -280,6 +280,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert_case"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6245d59a3e82a7fc217c5828a6692dbc6dfb63a0c8c90495621f7b9d79704a0e"
+
+[[package]]
 name = "core-foundation"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -375,6 +381,19 @@ checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
 dependencies = [
  "proc-macro2",
  "quote",
+ "syn",
+]
+
+[[package]]
+name = "derive_more"
+version = "0.99.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fb810d30a7c1953f91334de7244731fc3f3c10d7fe163338a35b9f640960321"
+dependencies = [
+ "convert_case",
+ "proc-macro2",
+ "quote",
+ "rustc_version",
  "syn",
 ]
 
@@ -623,7 +642,7 @@ dependencies = [
  "indexmap",
  "slab",
  "tokio",
- "tokio-util",
+ "tokio-util 0.6.9",
  "tracing",
 ]
 
@@ -956,16 +975,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f6bb902e437b6d86e03cce10a7e2af662292c5dfef23b65899ea3ac9354ad44"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "num_cpus"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19e64526ebdee182341572e50e9ad03965aa510cd94427a4549448f285e957a1"
-dependencies = [
- "hermit-abi",
- "libc",
 ]
 
 [[package]]
@@ -1339,6 +1348,7 @@ dependencies = [
  "serde_urlencoded",
  "tokio",
  "tokio-native-tls",
+ "tokio-util 0.6.9",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -1357,6 +1367,15 @@ name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
+
+[[package]]
+name = "rustc_version"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
+dependencies = [
+ "semver",
+]
 
 [[package]]
 name = "ryu"
@@ -1404,6 +1423,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "semver"
+version = "1.0.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d65bd28f48be7196d222d95b9243287f48d27aca604e08497513019ff0502cc4"
+
+[[package]]
 name = "sendfile"
 version = "0.1.0"
 dependencies = [
@@ -1413,6 +1438,7 @@ dependencies = [
  "bytes",
  "cfg-if",
  "datachannel",
+ "derive_more",
  "futures",
  "getrandom",
  "instant",
@@ -1430,6 +1456,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "tokio-tungstenite",
+ "tokio-util 0.7.0",
  "tungstenite",
  "url",
  "wasm-bindgen",
@@ -1658,7 +1685,6 @@ dependencies = [
  "libc",
  "memchr",
  "mio",
- "num_cpus",
  "pin-project-lite",
  "tokio-macros",
  "winapi",
@@ -1718,6 +1744,21 @@ checksum = "9e99e1983e5d376cd8eb4b66604d2e99e79f5bd988c3055891dcd8c9e2604cc0"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64910e1b9c1901aaf5375561e35b9c057d95ff41a44ede043a03e09279eabaf1"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",

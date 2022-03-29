@@ -1,39 +1,27 @@
 #[macro_use]
 extern crate log;
 
+mod api_client;
+mod cipher;
+mod downloader_client;
 mod error;
 mod mpsc;
 mod p2p;
 mod transport;
+mod uploader_client;
+mod url_safe_base64;
 mod util;
 mod websocket;
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "wasm32")] {
-        pub use p2p::{PeerToPeerClient, PeerToPeerClientEvent, PeerToPeerClientHandler};
-        pub use p2p::protocol::*;
-        pub use websocket::{DefaultWebSocketConnection, WebSocketClient};
-        pub use websocket::protocol::*;
-    } else {
-        mod api_client;
-        mod cipher;
-        mod downloader_client;
-        mod uploader_client;
-        mod url_safe_base64;
-
-        pub use api_client::DownloadId;
-        pub use downloader_client::DownloaderClient;
-        pub use uploader_client::{ProvisionedFile, UploaderClient};
-
-        use api_client::ApiClient;
-        use cipher::CipherKey;
-    }
-}
-
-pub use transport::Transport;
-
+pub use api_client::DownloadId;
+pub use downloader_client::DownloaderClient;
 pub use error::Error;
+pub use transport::Transport;
+pub use uploader_client::{ProvisionedFile, UploadableFile, UploaderClient};
 pub type Result<T> = std::result::Result<T, Error>;
+
+use api_client::ApiClient;
+use cipher::CipherKey;
 
 #[cfg(test)]
 fn init_test_logging() {
@@ -69,11 +57,12 @@ mod tests {
             debug!("uploader did upload");
         });
 
-        let mut downloader = DownloaderClient::from_testing_download_url(&download_url).unwrap();
+        let mut downloader =
+            DownloaderClient::from_testing_download_url(&download_url, Transport::Relay).unwrap();
         let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
         downloader.set_output_dir(&output_dir);
         debug!("downloader will download");
-        downloader.download_relayed().unwrap();
+        downloader.download(None).unwrap();
         debug!("downloader did download");
 
         uploader_handler.join().unwrap();
@@ -104,12 +93,11 @@ mod tests {
         });
 
         let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
-        let mut downloader = DownloaderClient::from_testing_download_url(&download_url).unwrap();
+        let mut downloader =
+            DownloaderClient::from_testing_download_url(&download_url, Transport::P2P).unwrap();
         downloader.set_output_dir(&output_dir);
         debug!("downloader will download");
-        downloader
-            .download_p2p(Some(Duration::from_secs(15)))
-            .unwrap();
+        downloader.download(Some(Duration::from_secs(15))).unwrap();
         debug!("downloader did download");
 
         uploader_handler.join().unwrap();

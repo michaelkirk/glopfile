@@ -1,9 +1,13 @@
-use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(target_arch = "wasm32")]
+mod web;
+
+use std::io;
 use std::ops::ControlFlow::{self, Break, Continue};
-use std::path::Path;
-use std::thread;
 
 use bytes::Bytes;
+use futures::{pin_mut, AsyncRead, FutureExt};
 use prost::Message;
 use url::Url;
 
@@ -22,6 +26,11 @@ pub struct UploaderClient {
     transport: Transport,
 }
 
+#[async_trait::async_trait(?Send)]
+pub trait UploadableFile {
+    async fn len(&self) -> io::Result<u64>;
+}
+
 impl UploaderClient {
     pub fn new(api_endpoint: Url, download_endpoint: Url, transport: Transport) -> Self {
         let api_client = ApiClient::new(api_endpoint, CipherKey::random());
@@ -34,17 +43,17 @@ impl UploaderClient {
         Self::new(api_endpoint, download_endpoint, Transport::Both)
     }
 
-    pub fn provision_file(&self, path: &Path) -> Result<ProvisionedFile> {
-        let file = File::open(path)?;
+    async fn provision_file_async<F>(
+        &self,
+        file: F,
+        file_name: String,
+    ) -> Result<ProvisionedFile<F>>
+    where
+        F: UploadableFile + AsyncRead + 'static,
+    {
+        let file_size = file.len().await?;
 
-        let file_size = file.metadata()?.len();
-        let file_name = path
-            .file_name()
-            .ok_or(Error::InvalidInput("invalid file path"))?;
-
-        let provision_response = self
-            .api_client
-            .provision_file(file_name.to_string_lossy().to_string(), file_size)?;
+        let provision_response = self.api_client.provision_file(file_name, file_size).await?;
 
         let download_id = DownloadId::new(provision_response.download_id);
         let download_url_without_cipher_key = self.download_url_without_cipher_key(&download_id);
@@ -69,79 +78,79 @@ impl UploaderClient {
         url
     }
 
-    pub fn upload_provisioned_file(&self, provisioned_file: ProvisionedFile) -> Result<()> {
-        let encrypted_file = self.api_client.encrypt_file(provisioned_file.file);
-        let upload_path = provisioned_file.upload_path;
+    pub async fn upload_provisioned_file_async<F: AsyncRead + 'static>(
+        &self,
+        provisioned_file: ProvisionedFile<F>,
+    ) -> Result<()> {
+        let encrypted_file = self.api_client.encrypt_file(provisioned_file.file).await;
+        let upload_path = &provisioned_file.upload_path;
+        let state = UploadState { encrypted_file };
         match self.transport {
             Transport::Both => {
-                let _ = self.p2p_transfer(encrypted_file.clone(), &upload_path);
-                self.api_client.upload_file(encrypted_file, &upload_path)
+                let p2p_task = self.p2p_transfer_async(upload_path, state.clone()).fuse();
+                let relayed_task = self.relayed_transfer_async(upload_path, state).fuse();
+                pin_mut!(p2p_task, relayed_task);
+                loop {
+                    futures::select! {
+                        p2p_result = p2p_task => match p2p_result {
+                            Ok(()) => break Ok(()),
+                            Err(error) => warn!("error uploading via p2p; continuing relayed: {error}"),
+                        },
+                        relayed_result = relayed_task => break relayed_result,
+                    }
+                }
             }
             Transport::P2P => {
-                let p2p_thread = self.p2p_transfer(encrypted_file, &upload_path)?;
-                let p2p_thread_result = p2p_thread
-                    .join()
-                    .expect("p2p thread panicked without returning result");
-                p2p_thread_result
+                self.p2p_transfer_async(&provisioned_file.upload_path, state)
+                    .await
             }
-            Transport::Relay => self.api_client.upload_file(encrypted_file, &upload_path),
+            Transport::Relay => self.relayed_transfer_async(upload_path, state).await,
         }
     }
 
-    fn p2p_transfer(
-        &self,
-        encrypted_file: EncryptedFile,
-        upload_path: &str,
-    ) -> Result<std::thread::JoinHandle<Result<()>>> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-
+    async fn p2p_transfer_async(&self, upload_path: &str, mut state: UploadState) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
-        let websocket = runtime.block_on(async {
-            self.api_client
-                .connect_upload_websocket(upload_path, move |message| {
-                    match message.inner {
-                        Some(web_socket_message::Inner::RtcSignaling(message)) => {
-                            signaling_message_handler
-                                .handle(message)
-                                .map(Continue)
-                                .unwrap_or(Break(()))
-                        }
-                        None => {
-                            // Unfortunately, with prost there's no way to log about what message type this actually was.
-                            warn!("unhandled websocket message type");
-                            Continue(())
-                        }
+        let websocket = self
+            .api_client
+            .connect_upload_websocket(upload_path, move |message| {
+                match message.inner {
+                    Some(web_socket_message::Inner::RtcSignaling(message)) => {
+                        signaling_message_handler
+                            .handle(message)
+                            .map(Continue)
+                            .unwrap_or(Break(()))
                     }
-                })
-                .await
-        })?;
+                    None => {
+                        // Unfortunately, with prost there's no way to log about what message type this actually was.
+                        warn!("unhandled websocket message type");
+                        Continue(())
+                    }
+                }
+            })
+            .await?;
+        p2p_client.set_websocket(websocket).await?;
+        p2p_client.transfer(&mut state, None).await
+    }
 
-        let mut state = UploadState { encrypted_file };
-        Ok(thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            runtime
-                .block_on(async {
-                    p2p_client.set_websocket(websocket).await?;
-                    p2p_client.transfer(&mut state, None).await
-                })
-        }))
+    async fn relayed_transfer_async(&self, upload_path: &str, state: UploadState) -> Result<()> {
+        self.api_client
+            .upload_file(state.encrypted_file.clone(), upload_path)
+            .await
     }
 }
 
-#[derive(Debug)]
-pub struct ProvisionedFile {
-    file: File,
+// Being generic over the file type works better than dynamic dispatch here, since with dynamic dispatch we have to
+// choose whether the file is Send and thus whether ProvisionedFile is Send. However, our native implementation is Send
+// while our WASM implementation isn't.
+pub struct ProvisionedFile<F> {
+    file: F,
     upload_path: String,
     download_url_without_cipher_key: Url,
     cipher_key: CipherKey,
 }
 
-impl ProvisionedFile {
+impl<F> ProvisionedFile<F> {
     /// The download link to get the uploaded file.
     pub fn formatted_download_url_and_key(&self) -> String {
         format!(
@@ -152,12 +161,14 @@ impl ProvisionedFile {
     }
 }
 
+#[derive(Clone)]
 struct UploadState {
     encrypted_file: EncryptedFile,
 }
 
+#[async_trait::async_trait(?Send)]
 impl PeerToPeerClientHandler for UploadState {
-    fn data_channel_message(
+    async fn data_channel_message(
         &mut self,
         client: &mut PeerToPeerClient,
         message_data: Bytes,
@@ -192,6 +203,8 @@ mod tests {
     use crate::init_test_logging;
     use crate::uploader_client::*;
 
+    pub(super) struct NullUploadableFile;
+
     #[test]
     fn test_download_url() {
         init_test_logging();
@@ -207,7 +220,6 @@ mod tests {
 
     mod provisioned_file_tests {
         use super::*;
-        use std::path::PathBuf;
 
         #[test]
         fn test_formatted_download_link() {
@@ -215,7 +227,7 @@ mod tests {
 
             let key = CipherKey::from_bytes([1u8; 32]);
             let p = ProvisionedFile {
-                file: File::open("test_fixtures/sample_file.txt").unwrap(),
+                file: Box::pin(NullUploadableFile),
                 upload_path: "/path/to/upload/123".to_string(),
                 download_url_without_cipher_key: Url::parse(
                     "https://123.invalid:1234/their/download/456",
@@ -228,17 +240,22 @@ mod tests {
                 "https://123.invalid:1234/their/download/456#cipher_key=AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE~"
             )
         }
+    }
 
-        #[test]
-        fn upload_non_existent_file() {
-            init_test_logging();
+    #[async_trait::async_trait(?Send)]
+    impl UploadableFile for NullUploadableFile {
+        async fn len(&self) -> std::io::Result<u64> {
+            unimplemented!()
+        }
+    }
 
-            let uploader = UploaderClient::new_testing();
-            let path = PathBuf::from("path/to/non-existent-file");
-            assert!(matches!(
-                uploader.provision_file(&path),
-                Err(Error::IO { .. }),
-            ));
+    impl AsyncRead for NullUploadableFile {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _buf: &mut [u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            unimplemented!()
         }
     }
 }

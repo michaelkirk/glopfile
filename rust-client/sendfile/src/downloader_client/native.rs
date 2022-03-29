@@ -1,0 +1,63 @@
+use std::io;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use futures::AsyncWrite;
+use instant::Duration;
+use tokio::fs::File;
+use tokio::io::BufWriter;
+use tokio_util::compat::TokioAsyncWriteCompatExt;
+
+use super::DownloaderClient;
+use crate::{api_client::DownloadMeta, Result};
+
+struct DownloadFile {
+    file_writer: tokio_util::compat::Compat<BufWriter<File>>,
+}
+
+impl DownloaderClient {
+    pub fn download(&self, p2p_timeout: Option<Duration>) -> Result<()> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(async {
+                let meta = self.fetch_meta_async().await?;
+                let file = DownloadFile::new(&meta, self.output_dir.as_deref()).await?;
+                let decrypted_file = self.api_client.decrypt_file(&meta, file);
+                self.download_async(&meta, decrypted_file, p2p_timeout)
+                    .await
+            })
+    }
+}
+
+impl DownloadFile {
+    async fn new(download_meta: &DownloadMeta, output_dir: Option<&Path>) -> io::Result<Self> {
+        let output_path: PathBuf = if let Some(output_dir) = output_dir {
+            Path::join(output_dir, &download_meta.file_meta.file_name)
+        } else {
+            PathBuf::from(&download_meta.file_meta.file_name)
+        };
+        let file = File::create(&output_path).await?;
+        let file_writer = BufWriter::new(file).compat_write();
+        Ok(Self { file_writer })
+    }
+}
+
+impl AsyncWrite for DownloadFile {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.file_writer).poll_write(cx, buf)
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.file_writer).poll_flush(cx)
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.file_writer).poll_close(cx)
+    }
+}

@@ -1,4 +1,8 @@
-use std::io::Write;
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(target_arch = "wasm32")]
+mod web;
+
 use std::ops::ControlFlow;
 use std::ops::ControlFlow::{Break, Continue};
 #[cfg(test)]
@@ -7,10 +11,11 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures::AsyncWriteExt;
 use prost::Message;
 use url::Url;
 
-use crate::api_client::DecryptedFile;
+use crate::api_client::{DecryptedFile, DownloadMeta};
 use crate::cipher::ContentCipher;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, TransferFinished,
@@ -23,6 +28,7 @@ use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 pub struct DownloaderClient {
     api_client: ApiClient,
     download_id: DownloadId,
+    #[cfg_attr(target_arch = "wasm32", allow(unused))]
     output_dir: Option<PathBuf>,
     transport: Transport,
 }
@@ -41,9 +47,9 @@ impl DownloaderClient {
         Ok(Self { api_client, download_id, output_dir: None, transport })
     }
     #[cfg(test)]
-    pub fn from_testing_download_url(download_url_str: &str) -> Result<Self> {
+    pub fn from_testing_download_url(download_url_str: &str, transport: Transport) -> Result<Self> {
         let api_endpoint = Url::parse("http://localhost:8080").expect("invalid hardcoded url");
-        Self::from_download_url(download_url_str, api_endpoint, Transport::Both)
+        Self::from_download_url(download_url_str, api_endpoint, transport)
     }
 
     #[cfg(test)]
@@ -51,57 +57,71 @@ impl DownloaderClient {
         self.output_dir = Some(path.into());
     }
 
-    pub fn download(&self, p2p_timeout: Option<Duration>) -> Result<()> {
+    async fn fetch_meta_async(&self) -> Result<DownloadMeta> {
+        self.api_client.fetch_meta(&self.download_id).await
+    }
+
+    async fn download_async(
+        &self,
+        meta: &DownloadMeta,
+        decrypted_file: DecryptedFile<'_>,
+        p2p_timeout: Option<Duration>,
+    ) -> Result<()> {
         match self.transport {
-            Transport::Both => match self.download_p2p(p2p_timeout) {
-                Err(Error::Timeout) => self.download_relayed(),
+            Transport::Both => match self
+                .download_p2p_async(meta, decrypted_file.clone(), p2p_timeout)
+                .await
+            {
+                Err(Error::Timeout) => self.download_relayed_async(meta, decrypted_file).await,
                 result => result,
             },
-            Transport::P2P => self.download_p2p(p2p_timeout),
-            Transport::Relay => self.download_relayed(),
+            Transport::P2P => {
+                self.download_p2p_async(meta, decrypted_file, p2p_timeout)
+                    .await
+            }
+            Transport::Relay => self.download_relayed_async(meta, decrypted_file).await,
         }
     }
 
-    pub fn download_relayed(&self) -> Result<()> {
-        let meta = self.api_client.fetch_meta(&self.download_id)?;
-        let decrypted_file = self
+    async fn download_relayed_async(
+        &self,
+        meta: &DownloadMeta,
+        decrypted_file: DecryptedFile<'_>,
+    ) -> Result<()> {
+        let result = self
             .api_client
-            .decrypted_file(&meta, self.output_dir.as_deref());
-        let result = self.api_client.download_content(&meta, decrypted_file);
+            .download_content(&meta, decrypted_file)
+            .await?;
         info!("successfully completed relayed file transfer");
-        result
+        Ok(result)
     }
 
-    pub fn download_p2p(&self, timeout: Option<Duration>) -> Result<()> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
-
-        let meta = self.api_client.fetch_meta(&self.download_id)?;
+    async fn download_p2p_async(
+        &self,
+        meta: &DownloadMeta,
+        decrypted_file: DecryptedFile<'_>,
+        timeout: Option<Duration>,
+    ) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
-        let websocket = runtime.block_on(async {
-            self.api_client
-                .connect_download_websocket(&meta.encrypted_content_url, move |message| {
-                    match message.inner {
-                        Some(web_socket_message::Inner::RtcSignaling(message)) => {
-                            signaling_message_handler
-                                .handle(message)
-                                .map(Continue)
-                                .unwrap_or(Break(()))
-                        }
-                        None => {
-                            // Unfortunately, with prost there's no way to log about what message type this actually was.
-                            warn!("unhandled websocket message type");
-                            Continue(())
-                        }
-                    }
-                })
-                .await
-        })?;
-        let decrypted_file = self
+        let websocket = self
             .api_client
-            .decrypted_file(&meta, self.output_dir.as_deref());
+            .connect_download_websocket(&meta.encrypted_content_url, move |message| {
+                match message.inner {
+                    Some(web_socket_message::Inner::RtcSignaling(message)) => {
+                        signaling_message_handler
+                            .handle(message)
+                            .map(Continue)
+                            .unwrap_or(Break(()))
+                    }
+                    None => {
+                        // Unfortunately, with prost there's no way to log about what message type this actually was.
+                        warn!("unhandled websocket message type");
+                        Continue(())
+                    }
+                }
+            })
+            .await?;
         let mut state = DownloadState {
             inflight_data_request: false,
             decrypted_file,
@@ -109,14 +129,12 @@ impl DownloaderClient {
             len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
         };
 
-        runtime.block_on(async {
-            p2p_client.set_websocket(websocket).await?;
-            p2p_client.create_offer().await?;
-            p2p_client.transfer(&mut state, timeout).await
-        })?;
+        p2p_client.set_websocket(websocket).await?;
+        p2p_client.create_offer().await?;
+        p2p_client.transfer(&mut state, timeout).await?;
 
         info!("successfully completed p2p file transfer");
-        self.api_client.finish_download(&meta)?;
+        self.api_client.finish_download(&meta).await?;
         Ok(())
     }
 
@@ -164,12 +182,16 @@ struct DownloadState<'a> {
     len: u64,
 }
 
+#[async_trait::async_trait(?Send)]
 impl PeerToPeerClientHandler for DownloadState<'_> {
-    fn data_channel_opened(&mut self, client: &mut PeerToPeerClient) -> Result<ControlFlow<()>> {
-        self.request_data_or_finish(client)
+    async fn data_channel_opened(
+        &mut self,
+        client: &mut PeerToPeerClient,
+    ) -> Result<ControlFlow<()>> {
+        self.request_data_or_finish(client).await
     }
 
-    fn data_channel_message(
+    async fn data_channel_message(
         &mut self,
         client: &mut PeerToPeerClient,
         message_data: Bytes,
@@ -184,13 +206,13 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
                 let len = u64::try_from(new_data.len()).expect("128-bit machine??");
                 if *offset == new_data_offset {
                     debug!("received RTC DataResponse from uploader for offset {offset} len {len}");
-                    decrypted_file.write_all(&new_data)?;
+                    decrypted_file.write_all(&new_data).await?;
                     *offset += len;
                     *inflight_data_request = false;
                 } else {
                     warn!("received RTC DataResponse from uploader for unexpected offset {offset} len {len}");
                 }
-                self.request_data_or_finish(client)
+                self.request_data_or_finish(client).await
             }
             None => {
                 // Unfortunately, with prost there's no way to log about what message type this actually was.
@@ -202,7 +224,10 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
 }
 
 impl DownloadState<'_> {
-    fn request_data_or_finish(&mut self, client: &mut PeerToPeerClient) -> Result<ControlFlow<()>> {
+    async fn request_data_or_finish(
+        &mut self,
+        client: &mut PeerToPeerClient,
+    ) -> Result<ControlFlow<()>> {
         let Self { inflight_data_request, decrypted_file, offset, len, .. } = self;
         let chunk_len = (*len - *offset).min(CHUNK_SIZE);
         if chunk_len != 0 {
@@ -216,7 +241,7 @@ impl DownloadState<'_> {
             Ok(Continue(()))
         } else {
             debug!("incoming RTC transfer finished");
-            decrypted_file.flush()?;
+            decrypted_file.flush().await?;
             client.send_downloader_message(downloader_message::Inner::TransferFinished(
                 TransferFinished {},
             ))?;
