@@ -15,7 +15,7 @@ jobs:
           fetch-depth: 1
 
       - name: install dependencies
-        run:  sudo apt install runc containerd docker.io
+        run:  sudo apt update && sudo apt install runc containerd docker.io
 
       - name: rebar3 compile
         run:  scripts/container-build -v -- rebar3 compile
