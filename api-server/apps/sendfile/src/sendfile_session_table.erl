@@ -39,18 +39,24 @@
 
 -spec start_link() -> ignore | {error, _} | {ok, pid() | {pid(), reference()}}.
 start_link() ->
-    Nodes = case sendfile_app:session_table_nodes() of
+    SessionNodes = case sendfile_app:session_table_nodes() of
                             {ok, OkNodes} -> OkNodes;
                             undefined     -> [node()]
                         end,
-    case lists:member(node(), Nodes) of
-        true ->
-            Peers = lists:delete(node(), Nodes),
-            gen_cluster_server:start_link(?SERVER, ?MODULE, {Peers}, []);
-        false ->
-            ?LOG_INFO(?MODULE_STRING " disabled for ~p, connecting to: ~p", [node(), Nodes]),
-            net_adm:ping_list(Nodes),
-            ignore
+    Node = node(),
+    case SessionNodes of
+        [Node | Peers] ->
+            ?LOG_INFO(?MODULE_STRING " starting ~p as primary of ~p", [Node, Peers]),
+            gen_cluster_server:start_link(?SERVER, ?MODULE, {Peers}, #{role => primary});
+        _ -> case lists:member(node(), SessionNodes) of
+            true ->
+                 Peers = lists:delete(node(), SessionNodes),
+                 ?LOG_INFO(?MODULE_STRING " starting ~p as fallback of session nodes: ~p", [Node, Peers]),
+                 gen_cluster_server:start_link(?SERVER, ?MODULE, {Peers}, #{role => fallback});
+            false -> ?LOG_INFO(?MODULE_STRING " ~p is not a session node. connecting to session nodes: ~p", [node(), SessionNodes]),
+                 net_adm:ping_list(SessionNodes),
+                 ignore
+        end
     end.
 
 -spec new_id() -> binary().
