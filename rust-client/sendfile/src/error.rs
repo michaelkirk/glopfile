@@ -1,3 +1,6 @@
+#[cfg(target_arch = "wasm32")]
+mod web;
+
 use crate::websocket::WebSocketError;
 
 #[derive(Debug, thiserror::Error)]

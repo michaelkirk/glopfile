@@ -73,7 +73,7 @@ impl WebUploaderClient {
     pub fn new(
         api_endpoint: web_sys::Url,
         download_endpoint: web_sys::Url,
-    ) -> Result<WebUploaderClient, JsValue> {
+    ) -> Result<WebUploaderClient, js_sys::Error> {
         let api_endpoint =
             url::Url::parse(&ToString::to_string(&api_endpoint.to_string())).unwrap();
         let download_endpoint =
@@ -116,13 +116,14 @@ impl WebUploaderClient {
 #[wasm_bindgen(js_class = ProvisionedFile)]
 impl WebProvisionedFile {
     #[wasm_bindgen(js_name = downloadURLWithCipherKey)]
-    pub fn download_url_with_cipher_key(&self) -> Result<web_sys::Url, JsValue> {
+    pub fn download_url_with_cipher_key(&self) -> Result<web_sys::Url, js_sys::Error> {
         let inner = self
             .inner
             .as_ref()
             .expect("ProvisionedFile used after being consumed");
         let url_string = inner.formatted_download_url_and_key();
-        web_sys::Url::new(&url_string)
+        let url = web_sys::Url::new(&url_string)?;
+        Ok(url)
     }
 }
 

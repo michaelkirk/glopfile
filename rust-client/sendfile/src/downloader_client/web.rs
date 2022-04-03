@@ -53,7 +53,7 @@ impl WebDownloaderClient {
     pub fn from_download_url(
         download_url: &str,
         api_endpoint: web_sys::Url,
-    ) -> Result<WebDownloaderClient, JsError> {
+    ) -> Result<WebDownloaderClient, js_sys::Error> {
         let api_endpoint =
             url::Url::parse(&ToString::to_string(&api_endpoint.to_string())).unwrap();
         Ok(Self {

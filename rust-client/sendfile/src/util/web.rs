@@ -6,7 +6,7 @@ use wasm_bindgen::JsCast;
 
 pub(crate) fn return_promise<F, T>(future: F) -> Promise
 where
-    F: Future<Output = Result<T, JsError>> + 'static,
+    F: Future<Output = Result<T, js_sys::Error>> + 'static,
     T: Into<JsValue>,
 {
     let future = future

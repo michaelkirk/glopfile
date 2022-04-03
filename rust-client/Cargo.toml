@@ -1,2 +1,2 @@
 [workspace]
-members = ["cli", "sendfile"]
+members = ["cli", "macros", "sendfile"]
