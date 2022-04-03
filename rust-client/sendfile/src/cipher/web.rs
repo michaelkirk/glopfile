@@ -82,7 +82,7 @@ impl super::Cipher for WebCipher {
             .expect("provided valid parameters to SubtleCrypto.encrypt");
         let output = JsFuture::from(encryption_promise)
             .await
-            .map_err(|_| Error::InvalidInput("decryption error"))?;
+            .map_err(|_| Error::Decrypt)?;
         Ok(Uint8Array::new(&output).to_vec())
     }
 }

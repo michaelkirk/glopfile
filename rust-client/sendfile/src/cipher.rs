@@ -64,11 +64,11 @@ impl CipherKey {
 
     pub fn from_string(url_safe_base64: &str) -> Result<Self> {
         let bytes = url_safe_base64::decode(url_safe_base64)
-            .map_err(|_| Error::InvalidInput("invalid base64 encoding for cipher key"))?;
+            .map_err(|_| Error::InvalidCipherKey)?;
 
         let byte_array: [u8; 32] = bytes
             .try_into()
-            .map_err(|_| Error::InvalidInput("invalid byte length for cipher key"))?;
+            .map_err(|_| Error::InvalidCipherKey)?;
 
         Ok(Self::from_bytes(byte_array))
     }

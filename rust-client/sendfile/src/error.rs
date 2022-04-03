@@ -31,6 +31,10 @@ pub enum Error {
     },
     #[error("Invalid input: {0}")]
     InvalidInput(&'static str),
+    #[error("Invalid cipher key")]
+    InvalidCipherKey,
+    #[error("Decryption error")]
+    Decrypt,
     #[error("Invalid server response: {0}")]
     InvalidServerResponse(&'static str),
     #[error("Timed out")]

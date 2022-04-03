@@ -22,7 +22,7 @@ impl super::Cipher for NativeCipher {
     async fn decrypt(&self, nonce: &Aes256GcmNonce, ciphertext: Payload<'_, '_>) -> Result<Vec<u8>> {
         self.cipher
             .decrypt(nonce, ciphertext)
-            .map_err(|_| Error::InvalidInput("decryption error"))
+            .map_err(|_| Error::Decrypt)
     }
 }
 
