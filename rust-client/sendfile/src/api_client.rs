@@ -51,7 +51,7 @@ impl ApiClient {
         let file_meta = FileMeta { file_name, file_size };
         let metadata_json = serde_json::to_string(&file_meta)
             .map_err(|_| Error::InvalidInput("unserializable upload"))?;
-        let encrypted_metadata = self.cipher().encrypt(metadata_json.as_bytes()).await;
+        let encrypted_metadata = self.cipher().encrypt(metadata_json.into()).await;
 
         let encoded_metadata = base64::encode(encrypted_metadata);
         debug!(
@@ -82,7 +82,7 @@ impl ApiClient {
         // assert_eq!(plaintext_len,
 
         // TODO stream
-        let encrypted_bytes = self.cipher().encrypt(&plaintext).await;
+        let encrypted_bytes = self.cipher().encrypt(plaintext.into()).await;
         EncryptedFile { encrypted_bytes: encrypted_bytes.into() }
     }
 
@@ -142,7 +142,7 @@ impl ApiClient {
         debug!("download_response: {:?}", download_response);
         let decoded_metadata: Vec<u8> = base64::decode(&download_response.meta)
             .map_err(|_| Error::InvalidInput("invalid base64 encoding of metadata"))?;
-        let decrypted_metadata = self.cipher().decrypt(&decoded_metadata).await?;
+        let decrypted_metadata = self.cipher().decrypt(decoded_metadata.into()).await?;
         let file_meta = FileMeta::try_from_encoded(&decrypted_metadata)?;
         Ok(DownloadMeta {
             encrypted_content_url: download_response.encrypted_content_url,
@@ -449,7 +449,7 @@ impl AsyncWrite for DecryptedFile<'_> {
                     let cipher = self.api_client.cipher();
                     Box::pin(async move {
                         let plaintext = cipher
-                            .decrypt(&data)
+                            .decrypt(data.into())
                             .await
                             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
 

@@ -1,4 +1,4 @@
-use aes_gcm::aead::Payload;
+use bytes::Bytes;
 use js_sys::{Array, JsString, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -48,10 +48,10 @@ impl super::Cipher for WebCipher {
         Self { subtle, key }
     }
 
-    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Payload<'_, '_>) -> Vec<u8> {
+    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Bytes, aad: Bytes) -> Vec<u8> {
         let iv = Uint8Array::from(&nonce[..]);
-        let aad = Uint8Array::from(plaintext.aad);
-        let data = Uint8Array::from(plaintext.msg);
+        let aad = Uint8Array::from(&aad[..]);
+        let data = Uint8Array::from(&plaintext[..]);
 
         let mut params = AesGcmParams::new("AES-GCM", &iv);
         params.additional_data(&aad);
@@ -68,11 +68,12 @@ impl super::Cipher for WebCipher {
     async fn decrypt(
         &self,
         nonce: &Aes256GcmNonce,
-        ciphertext: Payload<'_, '_>,
+        ciphertext: Bytes,
+        aad: Bytes,
     ) -> Result<Vec<u8>> {
         let iv = Uint8Array::from(&nonce[..]);
-        let aad = Uint8Array::from(ciphertext.aad);
-        let data = Uint8Array::from(ciphertext.msg);
+        let aad = Uint8Array::from(&aad[..]);
+        let data = Uint8Array::from(&ciphertext[..]);
 
         let mut params = AesGcmParams::new("AES-GCM", &iv);
         params.additional_data(&aad);

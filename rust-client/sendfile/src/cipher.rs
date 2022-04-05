@@ -13,8 +13,8 @@ cfg_if::cfg_if! {
 
 use std::sync::Arc;
 
-use aes_gcm::aead::Payload;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
+use bytes::Bytes;
 use derive_more::Deref;
 use zeroize::ZeroizeOnDrop;
 
@@ -42,8 +42,8 @@ trait Cipher {
     async fn new(key: &Aes256GcmKey) -> Self
     where
         Self: Sized;
-    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Payload<'_, '_>) -> Vec<u8>;
-    async fn decrypt(&self, nonce: &Aes256GcmNonce, ciphertext: Payload<'_, '_>) -> Result<Vec<u8>>;
+    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Bytes, aad: Bytes) -> Vec<u8>;
+    async fn decrypt(&self, nonce: &Aes256GcmNonce, ciphertext: Bytes, aad: Bytes) -> Result<Vec<u8>>;
 }
 
 type Aes256GcmKey = Key<<Aes256Gcm as aes_gcm::NewAead>::KeySize>;
@@ -97,22 +97,23 @@ impl ContentCipher {
     }
 
     // TODO: stream
-    pub async fn encrypt(&self, plaintext: &[u8]) -> Vec<u8> {
+    pub async fn encrypt(&self, plaintext: Bytes) -> Vec<u8> {
         let nonce_bytes: [u8; 12] = rand::random();
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let cipher = self.cipher().await;
-        let mut ciphertext = cipher.encrypt(nonce, plaintext.into()).await;
+        let mut ciphertext = cipher.encrypt(nonce, plaintext, Bytes::new()).await;
         let mut nonce_and_ciphertext = nonce.to_vec();
         nonce_and_ciphertext.append(&mut ciphertext);
         nonce_and_ciphertext
     }
 
-    pub async fn decrypt(&self, nonce_and_ciphertext: &[u8]) -> Result<Vec<u8>> {
-        let (nonce_bytes, ciphertext) = nonce_and_ciphertext.split_at(12);
-        let nonce = Nonce::from_slice(nonce_bytes);
+    pub async fn decrypt(&self, mut nonce_and_ciphertext: Bytes) -> Result<Vec<u8>> {
+        let nonce_bytes = nonce_and_ciphertext.split_to(12);
+        let ciphertext = nonce_and_ciphertext;
+        let nonce = Nonce::from_slice(&nonce_bytes);
 
         let cipher = self.cipher().await;
-        cipher.decrypt(nonce, ciphertext.into()).await
+        cipher.decrypt(nonce, ciphertext, Bytes::new()).await
     }
 }
