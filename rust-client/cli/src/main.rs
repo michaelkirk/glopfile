@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, Result};
-use clap::{AppSettings, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use sendfile::{DownloaderClient, Transport, UploaderClient};
 use url::Url;
 
@@ -17,7 +17,7 @@ struct Args {
 #[derive(Subcommand)]
 enum Commands {
     /// Make a file available via a download link until your peer downloads it.
-    #[clap(setting(AppSettings::ArgRequiredElseHelp))]
+    #[clap(arg_required_else_help(true))]
     Send {
         /// file you want to send
         path: PathBuf,
@@ -41,7 +41,7 @@ enum Commands {
     },
 
     /// Downloads a file being sent by another user
-    #[clap(setting(AppSettings::ArgRequiredElseHelp))]
+    #[clap(arg_required_else_help(true))]
     Receive {
         /// The link provided to you by the sender
         download_link: String,
