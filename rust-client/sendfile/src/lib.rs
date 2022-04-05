@@ -18,6 +18,7 @@ pub use downloader_client::DownloaderClient;
 pub use error::Error;
 pub use transport::Transport;
 pub use uploader_client::{ProvisionedFile, UploadableFile, UploaderClient};
+pub use util::ProgressState;
 pub type Result<T> = std::result::Result<T, Error>;
 
 use api_client::ApiClient;
@@ -53,7 +54,9 @@ mod tests {
         // uploading is a blocking operation, so spawn it on separate thread
         let uploader_handler = std::thread::spawn(move || {
             debug!("uploader will upload");
-            uploader.upload_provisioned_file(provisioned_file).unwrap();
+            uploader
+                .upload_provisioned_file(provisioned_file, drop)
+                .unwrap();
             debug!("uploader did upload");
         });
 
@@ -62,7 +65,8 @@ mod tests {
         let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
         downloader.set_output_dir(&output_dir);
         debug!("downloader will download");
-        downloader.download(None).unwrap();
+        let meta = downloader.fetch_meta().unwrap();
+        downloader.download(&meta, None, drop).unwrap();
         debug!("downloader did download");
 
         uploader_handler.join().unwrap();
@@ -88,7 +92,9 @@ mod tests {
         // uploading is a blocking operation, so spawn it on separate thread
         let uploader_handler = std::thread::spawn(move || {
             debug!("uploader will upload");
-            uploader.upload_provisioned_file(provisioned_file).unwrap();
+            uploader
+                .upload_provisioned_file(provisioned_file, drop)
+                .unwrap();
             debug!("uploader did upload");
         });
 
@@ -97,7 +103,10 @@ mod tests {
             DownloaderClient::from_testing_download_url(&download_url, Transport::P2P).unwrap();
         downloader.set_output_dir(&output_dir);
         debug!("downloader will download");
-        downloader.download(Some(Duration::from_secs(15))).unwrap();
+        let meta = downloader.fetch_meta().unwrap();
+        downloader
+            .download(&meta, Some(Duration::from_secs(15)), drop)
+            .unwrap();
         debug!("downloader did download");
 
         uploader_handler.join().unwrap();

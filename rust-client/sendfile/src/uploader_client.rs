@@ -65,6 +65,7 @@ impl UploaderClient {
         let upload_path = provision_response.upload_url;
         let provisioned_file = ProvisionedFile {
             file,
+            file_size,
             upload_path,
             download_url_without_cipher_key,
             // TODO: per file key?
@@ -87,6 +88,10 @@ impl UploaderClient {
         Progress::new_with(|progress_tx| async move {
             let encrypted_file = self.api_client.encrypt_file(provisioned_file.file).await;
             let encrypted_file_len = encrypted_file.len();
+
+            // Send a progress update to signal that we're done with encryption and about to start the upload.
+            let _ignore = progress_tx.send(ProgressState { current: 0, total: encrypted_file_len });
+
             let upload_path = &provisioned_file.upload_path;
             let state = UploadState { encrypted_file, progress_tx };
             match self.transport {
@@ -183,6 +188,7 @@ impl UploaderClient {
 // while our WASM implementation isn't.
 pub struct ProvisionedFile<F> {
     file: F,
+    file_size: u64,
     upload_path: String,
     download_url_without_cipher_key: Url,
     cipher_key: CipherKey,
@@ -196,6 +202,10 @@ impl<F> ProvisionedFile<F> {
             self.download_url_without_cipher_key,
             self.cipher_key.serialized()
         )
+    }
+
+    pub fn file_size(&self) -> u64 {
+        self.file_size
     }
 }
 
@@ -276,6 +286,7 @@ mod tests {
             let key = CipherKey::from_bytes([1u8; 32]);
             let p = ProvisionedFile {
                 file: Box::pin(NullUploadableFile),
+                file_size: 0,
                 upload_path: "/path/to/upload/123".to_string(),
                 download_url_without_cipher_key: Url::parse(
                     "https://123.invalid:1234/their/download/456",

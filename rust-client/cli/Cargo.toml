@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 anyhow = { version = "1.0.52", features = ["backtrace"] }
 clap = { version = "3.0.10", features = ["derive"] }
+crossbeam = "0.8.1"
+indicatif = { version = "0.17.0-rc.10", features = ["improved_unicode"] }
 pretty_env_logger = "0.4.0"
 sendfile = { path = "../sendfile" }
 url = "2.2.2"

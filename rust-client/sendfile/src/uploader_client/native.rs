@@ -2,12 +2,12 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures::AsyncRead;
+use futures::{AsyncRead, pin_mut, TryStreamExt};
 use tokio::fs::File;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use super::{ProvisionedFile, UploadableFile, UploaderClient};
-use crate::{Error, Result};
+use crate::{Error, Result, ProgressState};
 
 pub struct NativeUploadFile {
     file: tokio_util::compat::Compat<File>,
@@ -33,11 +33,22 @@ impl UploaderClient {
             })
     }
 
-    pub fn upload_provisioned_file(&self, provisioned_file: NativeProvisionedFile) -> Result<()> {
+    pub fn upload_provisioned_file<F: FnMut(ProgressState<u64>)>(
+        &self,
+        provisioned_file: NativeProvisionedFile,
+        mut progress_fun: F,
+    ) -> Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
-            .block_on(self.upload_provisioned_file_async(provisioned_file))
+            .block_on(async {
+                let upload_progress = self.upload_provisioned_file_async(provisioned_file);
+                pin_mut!(upload_progress);
+                while let Some(progress_state) = upload_progress.try_next().await? {
+                    progress_fun(progress_state);
+                }
+                Ok(())
+            })
     }
 }
 

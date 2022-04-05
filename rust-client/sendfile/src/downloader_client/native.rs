@@ -3,13 +3,14 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures::AsyncWrite;
+use futures::{pin_mut, AsyncWrite, TryStreamExt};
 use instant::Duration;
 use tokio::fs::File;
 use tokio::io::BufWriter;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 use super::DownloaderClient;
+use crate::util::ProgressState;
 use crate::{api_client::DownloadMeta, Result};
 
 struct DownloadFile {
@@ -17,16 +18,30 @@ struct DownloadFile {
 }
 
 impl DownloaderClient {
-    pub fn download(&self, p2p_timeout: Option<Duration>) -> Result<()> {
+    pub fn fetch_meta(&self) -> Result<DownloadMeta> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(self.fetch_meta_async())
+    }
+    pub fn download<F: FnMut(ProgressState<u64>)>(
+        &self,
+        meta: &DownloadMeta,
+        p2p_timeout: Option<Duration>,
+        mut progress_fun: F,
+    ) -> Result<()> {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?
             .block_on(async {
-                let meta = self.fetch_meta_async().await?;
-                let file = DownloadFile::new(&meta, self.output_dir.as_deref()).await?;
+                let file = DownloadFile::new(meta, self.output_dir.as_deref()).await?;
                 let decrypted_file = self.api_client.decrypt_file(&meta, file);
-                self.download_async(&meta, decrypted_file, p2p_timeout)
-                    .await
+                let download_progress = self.download_async(&meta, decrypted_file, p2p_timeout);
+                pin_mut!(download_progress);
+                while let Some(progress_state) = download_progress.try_next().await? {
+                    progress_fun(progress_state);
+                }
+                Ok(())
             })
     }
 }
