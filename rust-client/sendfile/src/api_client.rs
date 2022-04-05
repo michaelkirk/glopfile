@@ -6,7 +6,6 @@ use std::task::{Context, Poll};
 use std::{io, mem};
 
 use bytes::Bytes;
-use cfg_if::cfg_if;
 use futures::{
     pin_mut, ready, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt,
     StreamExt, TryStreamExt,
@@ -20,7 +19,7 @@ use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{Error, Result};
 
 // should this be configurable, or infinite even?
-#[cfg_attr(target_arch = "wasm32", allow(unused))]
+#[cfg(not(target_arch = "wasm32"))]
 const CONTENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(500);
 
 pub(crate) struct ApiClient {
@@ -202,16 +201,7 @@ impl ApiClient {
         }
 
         debug!("waiting on response body");
-        let response_bytes_stream = {
-            cfg_if! {
-                if #[cfg(target_arch = "wasm32")] {
-                    // TODO contribute reqwest::Response::bytes_stream upstream
-                    futures::stream::once(response.bytes()).map_err(Error::from)
-                } else {
-                    response.bytes_stream().map_err(Error::from)
-                }
-            }
-        };
+        let response_bytes_stream = response.bytes_stream().map_err(Error::from);
         let mut decrypted_file_sink = Pin::new(&mut decrypted_file)
             .into_sink()
             .sink_map_err(Error::from);
