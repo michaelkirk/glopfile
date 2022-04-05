@@ -4,7 +4,7 @@ use std::task;
 use std::task::Poll;
 use std::{io, mem};
 
-use futures::{ready, AsyncRead, FutureExt};
+use futures::{pin_mut, ready, AsyncRead, FutureExt, TryStreamExt};
 use js_sys::{JsString, Promise, Uint8Array};
 use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::JsFuture;
@@ -35,6 +35,22 @@ extern "C" {
     fn read_at(this: &WebUploadableFile, offset: u64, len: u64) -> Promise;
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const UPLOAD_EVENT_HANDLER_INTERFACE: &'static str = r#"
+export interface UploadEventHandler {
+    uploadProgress(offset: BigInt, len: BigInt);
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "UploadEventHandler")]
+    pub type WebUploadEventHandler;
+
+    #[wasm_bindgen(catch, method, js_name = uploadProgress)]
+    fn upload_progress(this: &WebUploadEventHandler, offset: u64, len: u64) -> Result<(), JsValue>;
+}
+
 #[wasm_bindgen(js_name = ProvisionedFile)]
 pub struct WebProvisionedFile {
     inner: Option<ProvisionedFile<UploadFile>>,
@@ -53,12 +69,8 @@ struct UploadFile {
 
 enum UploadFileReadState {
     Idle,
-    Reading {
-        pending_read: JsFuture
-    },
-    Available {
-        data: Uint8Array,
-    },
+    Reading { pending_read: JsFuture },
+    Available { data: Uint8Array },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -98,16 +110,27 @@ impl WebUploaderClient {
     }
 
     #[wasm_bindgen(js_name = uploadFile)]
-    pub fn upload_file(self, provisioned_file: &mut WebProvisionedFile) -> Promise {
+    pub fn upload_file(
+        self,
+        provisioned_file: &mut WebProvisionedFile,
+        event_handler: Option<WebUploadEventHandler>,
+    ) -> Promise {
         let client = Rc::clone(&self.client);
         let provisioned_file = provisioned_file
             .inner
             .take()
             .expect("ProvisionedFile used after being consumed");
         return_promise(async move {
-            client
-                .upload_provisioned_file_async(provisioned_file)
-                .await?;
+            let upload_progress = client.upload_provisioned_file_async(provisioned_file);
+            pin_mut!(upload_progress);
+            while let Some(progress_state) = upload_progress.try_next().await? {
+                if let Some(event_handler) = &event_handler {
+                    event_handler.upload_progress(
+                        progress_state.current.into(),
+                        progress_state.total.into(),
+                    )?;
+                }
+            }
             Ok(JsValue::UNDEFINED)
         })
     }

@@ -1,11 +1,14 @@
 use std::marker::PhantomData;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
+use futures::Stream;
 use instant::Duration;
 
-#[cfg(target_arch = "wasm32")]
-pub mod web;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
@@ -21,12 +24,14 @@ cfg_if::cfg_if! {
 
 pub struct Sender<T, C = DefaultSender<T>> {
     tx: C,
-    _t: PhantomData<T>,
+    _t: PhantomData<fn() -> T>,
 }
 
+#[pin_project::pin_project]
 pub struct Receiver<T, C = DefaultReceiver<T>> {
+    #[pin]
     rx: C,
-    _t: PhantomData<T>,
+    _t: PhantomData<fn() -> T>,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
@@ -50,14 +55,17 @@ pub trait ChannelSend<T> {
 }
 
 #[async_trait::async_trait(?Send)]
-pub trait ChannelReceive<T> {
+pub trait ChannelReceive<T>: Stream<Item = T> {
     async fn recv(&mut self) -> Result<T, RecvError>;
     async fn recv_timeout(&mut self, timeout: Duration) -> Result<T, RecvTimeoutError>;
 }
 
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let (tx, rx) = default_channel();
-    (Sender { tx, _t: PhantomData }, Receiver { rx, _t: PhantomData })
+    (
+        Sender { tx, _t: PhantomData },
+        Receiver { rx, _t: PhantomData },
+    )
 }
 
 impl<T, C: ChannelSend<T>> Sender<T, C> {
@@ -79,5 +87,13 @@ impl<T, C: ChannelReceive<T>> Receiver<T, C> {
 
     pub async fn recv_timeout(&mut self, timeout: Duration) -> Result<T, RecvTimeoutError> {
         self.rx.recv_timeout(timeout).await
+    }
+}
+
+impl<T, C: ChannelReceive<T>> Stream for Receiver<T, C> {
+    type Item = T;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.project().rx.poll_next(cx)
     }
 }

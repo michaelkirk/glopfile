@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use bytes::Bytes;
-use futures::AsyncWriteExt;
+use futures::{AsyncWriteExt, Future};
 use prost::Message;
 use url::Url;
 
@@ -22,8 +22,9 @@ use crate::p2p::protocol::{
     UploaderMessage,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
+use crate::util::{Progress, ProgressState};
 use crate::websocket::web_socket_message;
-use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
+use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport, mpsc};
 
 pub struct DownloaderClient {
     api_client: ApiClient,
@@ -61,36 +62,39 @@ impl DownloaderClient {
         self.api_client.fetch_meta(&self.download_id).await
     }
 
-    async fn download_async(
-        &self,
-        meta: &DownloadMeta,
-        decrypted_file: DecryptedFile<'_>,
+    fn download_async<'a>(
+        &'a self,
+        meta: &'a DownloadMeta,
+        decrypted_file: DecryptedFile<'a>,
         p2p_timeout: Option<Duration>,
-    ) -> Result<()> {
-        match self.transport {
-            Transport::Both => match self
-                .download_p2p_async(meta, decrypted_file.clone(), p2p_timeout)
-                .await
-            {
-                Err(Error::Timeout) => self.download_relayed_async(meta, decrypted_file).await,
-                result => result,
-            },
-            Transport::P2P => {
-                self.download_p2p_async(meta, decrypted_file, p2p_timeout)
+    ) -> Progress<u64, impl Future<Output = Result<()>> + 'a> {
+        Progress::new_with(|progress_tx| async move {
+            match self.transport {
+                Transport::Both => match self
+                    .download_p2p_async(meta, decrypted_file.clone(), p2p_timeout, progress_tx.clone())
                     .await
+                {
+                    Err(Error::Timeout) => self.download_relayed_async(meta, decrypted_file, progress_tx).await,
+                    result => result,
+                },
+                Transport::P2P => {
+                    self.download_p2p_async(meta, decrypted_file, p2p_timeout, progress_tx)
+                        .await
+                }
+                Transport::Relay => self.download_relayed_async(meta, decrypted_file, progress_tx).await,
             }
-            Transport::Relay => self.download_relayed_async(meta, decrypted_file).await,
-        }
+        })
     }
 
     async fn download_relayed_async(
         &self,
         meta: &DownloadMeta,
         decrypted_file: DecryptedFile<'_>,
+        progress_tx: mpsc::Sender<ProgressState<u64>>,
     ) -> Result<()> {
         let result = self
             .api_client
-            .download_content(&meta, decrypted_file)
+            .download_content(&meta, decrypted_file, progress_tx)
             .await?;
         info!("successfully completed relayed file transfer");
         Ok(result)
@@ -101,6 +105,7 @@ impl DownloaderClient {
         meta: &DownloadMeta,
         decrypted_file: DecryptedFile<'_>,
         timeout: Option<Duration>,
+        progress_tx: mpsc::Sender<ProgressState<u64>>,
     ) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
@@ -114,6 +119,10 @@ impl DownloaderClient {
                             .map(Continue)
                             .unwrap_or(Break(()))
                     }
+                    Some(message @ web_socket_message::Inner::UploadDataAck(_)) => {
+                        warn!("unexpected websocket message: {message:?}");
+                        Continue(())
+                    }
                     None => {
                         // Unfortunately, with prost there's no way to log about what message type this actually was.
                         warn!("unhandled websocket message type");
@@ -125,6 +134,7 @@ impl DownloaderClient {
         let mut state = DownloadState {
             inflight_data_request: false,
             decrypted_file,
+            progress_tx,
             offset: 0,
             len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
         };
@@ -180,6 +190,7 @@ struct DownloadState<'a> {
     decrypted_file: DecryptedFile<'a>,
     offset: u64,
     len: u64,
+    progress_tx: mpsc::Sender<ProgressState<u64>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -209,6 +220,10 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
                     decrypted_file.write_all(&new_data).await?;
                     *offset += len;
                     *inflight_data_request = false;
+                    let _ignore = self.progress_tx.send(ProgressState {
+                        current: *offset,
+                        total: self.len,
+                    });
                 } else {
                     warn!("received RTC DataResponse from uploader for unexpected offset {offset} len {len}");
                 }

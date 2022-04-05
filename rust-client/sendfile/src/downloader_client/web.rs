@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
 
-use futures::{ready, AsyncWrite, FutureExt};
+use futures::{pin_mut, ready, AsyncWrite, FutureExt, TryStreamExt};
 use instant::Duration;
 use js_sys::{JsString, Promise, Uint8Array};
 use wasm_bindgen::prelude::*;
@@ -29,6 +29,26 @@ extern "C" {
 
     #[wasm_bindgen(method)]
     fn write(this: &JsDownloadableFile, data: Uint8Array) -> Promise;
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const DOWNLOAD_EVENT_HANDLER_INTERFACE: &'static str = r#"
+export interface DownloadEventHandler {
+    downloadProgress(offset: BigInt, len: BigInt);
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DownloadEventHandler")]
+    pub type WebDownloadEventHandler;
+
+    #[wasm_bindgen(catch, method, js_name = downloadProgress)]
+    fn download_progress(
+        this: &WebDownloadEventHandler,
+        offset: u64,
+        len: u64,
+    ) -> Result<(), JsValue>;
 }
 
 #[wasm_bindgen(js_name = DownloaderClient)]
@@ -80,6 +100,7 @@ impl WebDownloaderClient {
         meta: &DownloadMeta,
         file: JsDownloadableFile,
         p2p_timeout_seconds: Option<f64>,
+        event_handler: Option<WebDownloadEventHandler>,
     ) -> Promise {
         let meta = meta.clone();
         let p2p_timeout = p2p_timeout_seconds.map(Duration::from_secs_f64);
@@ -87,9 +108,16 @@ impl WebDownloaderClient {
         let client = Rc::clone(&self.client);
         return_promise(async move {
             let decrypted_file = client.api_client.decrypt_file(&meta, file_state);
-            client
-                .download_async(&meta, decrypted_file, p2p_timeout)
-                .await?;
+            let download_progress = client.download_async(&meta, decrypted_file, p2p_timeout);
+            pin_mut!(download_progress);
+            if let Some(event_handler) = &event_handler {
+                while let Some(progress_state) = download_progress.try_next().await? {
+                    event_handler
+                        .download_progress(progress_state.current, progress_state.total)?;
+                }
+            } else {
+                download_progress.await?;
+            }
             Ok(JsValue::UNDEFINED)
         })
     }

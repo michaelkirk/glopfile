@@ -5,6 +5,7 @@ package sendfile.websocket.protocol;
 message WebSocketMessage {
   oneof inner {
     RtcSignalingMessage rtc_signaling = 1;
+    UploadDataAck upload_data_ack = 2;
   }
 }
 
@@ -30,4 +31,8 @@ enum SessionDescriptionType {
   OFFER = 1;
   PRANSWER = 2;
   ROLLBACK = 3;
+}
+
+message UploadDataAck {
+  uint64 offset = 1;
 }

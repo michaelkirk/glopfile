@@ -7,16 +7,18 @@ use std::io;
 use std::ops::ControlFlow::{self, Break, Continue};
 
 use bytes::Bytes;
-use futures::{pin_mut, AsyncRead, FutureExt};
+use futures::{pin_mut, AsyncRead, Future, FutureExt};
 use prost::Message;
 use url::Url;
 
 use crate::api_client::EncryptedFile;
+use crate::mpsc;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
     TransferFinished,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
+use crate::util::{Progress, ProgressState};
 use crate::websocket::web_socket_message;
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
@@ -78,39 +80,68 @@ impl UploaderClient {
         url
     }
 
-    pub async fn upload_provisioned_file_async<F: AsyncRead + 'static>(
+    pub fn upload_provisioned_file_async<F: AsyncRead + 'static>(
         &self,
         provisioned_file: ProvisionedFile<F>,
-    ) -> Result<()> {
-        let encrypted_file = self.api_client.encrypt_file(provisioned_file.file).await;
-        let upload_path = &provisioned_file.upload_path;
-        let state = UploadState { encrypted_file };
-        match self.transport {
-            Transport::Both => {
-                let p2p_task = self.p2p_transfer_async(upload_path, state.clone()).fuse();
-                let relayed_task = self.relayed_transfer_async(upload_path, state).fuse();
-                pin_mut!(p2p_task, relayed_task);
-                loop {
-                    futures::select! {
-                        p2p_result = p2p_task => match p2p_result {
-                            Ok(()) => break Ok(()),
-                            Err(error) => warn!("error uploading via p2p; continuing relayed: {error}"),
-                        },
-                        relayed_result = relayed_task => break relayed_result,
+    ) -> Progress<u64, impl Future<Output = Result<()>> + '_> {
+        Progress::new_with(|progress_tx| async move {
+            let encrypted_file = self.api_client.encrypt_file(provisioned_file.file).await;
+            let encrypted_file_len = encrypted_file.len();
+            let upload_path = &provisioned_file.upload_path;
+            let state = UploadState { encrypted_file, progress_tx };
+            match self.transport {
+                Transport::Both => {
+                    let p2p_task = self.p2p_transfer_async(upload_path, state.clone()).fuse();
+                    let relayed_task = self.relayed_transfer_async(upload_path, state).fuse();
+                    pin_mut!(p2p_task, relayed_task);
+                    loop {
+                        futures::select! {
+                            p2p_result = p2p_task => match p2p_result {
+                                Ok(()) => break Ok(()),
+                                Err(error) => warn!("error uploading via p2p; continuing relayed: {error}"),
+                            },
+                            relayed_result = relayed_task => break relayed_result,
+                        }
                     }
                 }
+                Transport::P2P => {
+                    self.p2p_transfer_async(&provisioned_file.upload_path, state)
+                        .await
+                }
+                Transport::Relay => {
+                    let progress_tx = state.progress_tx.clone();
+                    let websocket = self
+                        .api_client
+                        .connect_upload_websocket(upload_path, move |message| {
+                            match message.inner {
+                                Some(web_socket_message::Inner::RtcSignaling(message)) =>
+                                    debug!("ignoring received RTC signaling message: {message:?}"),
+                                Some(web_socket_message::Inner::UploadDataAck(ack)) =>
+                                    drop(progress_tx.send(ProgressState {
+                                        current: ack.offset,
+                                        total: encrypted_file_len,
+                                    })),
+                                // Unfortunately, with prost there's no way to log about what message type this actually was.
+                                None =>
+                                    warn!("unhandled websocket message type"),
+                            }
+                            Continue(())
+                        })
+                        .await?;
+                    self.relayed_transfer_async(upload_path, state).await?;
+                    // Close the websocket
+                    drop(websocket);
+                    Ok(())
+                }
             }
-            Transport::P2P => {
-                self.p2p_transfer_async(&provisioned_file.upload_path, state)
-                    .await
-            }
-            Transport::Relay => self.relayed_transfer_async(upload_path, state).await,
-        }
+        })
     }
 
     async fn p2p_transfer_async(&self, upload_path: &str, mut state: UploadState) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
+        let progress_tx = state.progress_tx.clone();
+        let encrypted_file_len = state.encrypted_file.len();
         let websocket = self
             .api_client
             .connect_upload_websocket(upload_path, move |message| {
@@ -120,6 +151,13 @@ impl UploaderClient {
                             .handle(message)
                             .map(Continue)
                             .unwrap_or(Break(()))
+                    }
+                    Some(web_socket_message::Inner::UploadDataAck(ack)) => {
+                        let _ignore = progress_tx.send(ProgressState {
+                            current: ack.offset,
+                            total: encrypted_file_len,
+                        });
+                        Continue(())
                     }
                     None => {
                         // Unfortunately, with prost there's no way to log about what message type this actually was.
@@ -135,7 +173,7 @@ impl UploaderClient {
 
     async fn relayed_transfer_async(&self, upload_path: &str, state: UploadState) -> Result<()> {
         self.api_client
-            .upload_file(state.encrypted_file.clone(), upload_path)
+            .upload_file(state.encrypted_file, upload_path)
             .await
     }
 }
@@ -164,6 +202,7 @@ impl<F> ProvisionedFile<F> {
 #[derive(Clone)]
 struct UploadState {
     encrypted_file: EncryptedFile,
+    progress_tx: mpsc::Sender<ProgressState<u64>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -173,20 +212,29 @@ impl PeerToPeerClientHandler for UploadState {
         client: &mut PeerToPeerClient,
         message_data: Bytes,
     ) -> Result<ControlFlow<()>> {
-        let Self { encrypted_file } = self;
+        let Self { encrypted_file, progress_tx } = self;
         let message = DownloaderMessage::decode(message_data).map_err(Error::rtc_err)?;
         match message.inner {
             Some(downloader_message::Inner::DataRequest(DataRequest { offset, len })) => {
                 debug!("received RTC DataRequest from downloader for offset {offset} len {len}");
+                let new_offset = offset + len;
                 let len = usize::try_from(len).expect("file fits in memory");
                 let data = encrypted_file.read_at_exact(offset, len);
                 client.send_uploader_message(uploader_message::Inner::DataResponse(
                     DataResponse { data, offset },
                 ))?;
+                let _ = progress_tx.send(ProgressState {
+                    current: new_offset,
+                    total: encrypted_file.len(),
+                });
                 Ok(Continue(()))
             }
             Some(downloader_message::Inner::TransferFinished(TransferFinished {})) => {
                 debug!("outgoing RTC transfer finished");
+                let _ = progress_tx.send(ProgressState {
+                    current: encrypted_file.len(),
+                    total: encrypted_file.len(),
+                });
                 Ok(Break(()))
             }
             None => {

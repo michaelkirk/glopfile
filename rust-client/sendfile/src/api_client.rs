@@ -15,8 +15,9 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher};
+use crate::util::ProgressState;
 use crate::websocket::{WebSocketClient, WebSocketMessage};
-use crate::{Error, Result};
+use crate::{mpsc, Error, Result};
 
 // should this be configurable, or infinite even?
 #[cfg(not(target_arch = "wasm32"))]
@@ -85,7 +86,11 @@ impl ApiClient {
         EncryptedFile { encrypted_bytes: encrypted_bytes.into() }
     }
 
-    pub async fn upload_file(&self, file: EncryptedFile, upload_path: &str) -> Result<()> {
+    pub async fn upload_file(
+        &self,
+        file: EncryptedFile,
+        upload_path: &str,
+    ) -> Result<()> {
         let url = self.endpoint.join(upload_path).expect("bad endpoint?");
 
         let mut client_builder = self.http_client_builder();
@@ -168,11 +173,13 @@ impl ApiClient {
         &self,
         download_meta: &DownloadMeta,
         mut decrypted_file: DecryptedFile<'_>,
+        progress_tx: mpsc::Sender<ProgressState<u64>>,
     ) -> Result<()> {
         let content_url = self
             .endpoint
             .join(&download_meta.encrypted_content_url)
             .map_err(|_| Error::InvalidInput("bad content url"))?;
+        let content_size = download_meta.file_meta.file_size;
 
         let mut client_builder = self.http_client_builder();
 
@@ -206,7 +213,13 @@ impl ApiClient {
             .into_sink()
             .sink_map_err(Error::from);
 
+        let mut content_downloaded = 0;
         response_bytes_stream
+            .inspect_ok(|data| {
+                content_downloaded += u64::try_from(data.len()).unwrap();
+                let _ignore = progress_tx
+                    .send(ProgressState { current: content_downloaded, total: content_size });
+            })
             .forward(&mut decrypted_file_sink)
             .await?;
         decrypted_file_sink.close().await?;
@@ -367,6 +380,10 @@ impl EncryptedFile {
         let offset = usize::try_from(offset).expect("file fits in memory");
         self.encrypted_bytes
             .slice(offset..offset.saturating_add(len))
+    }
+
+    pub(crate) fn len(&self) -> u64 {
+        u64::try_from(self.encrypted_bytes.len()).unwrap()
     }
 }
 
