@@ -63,7 +63,8 @@ init(Req, _InitialState) ->
           <<"expires">>       => <<"Fri, 1 Jan 1999 12:00:00 AM GMT">>,
           <<"pragma">>        => <<"no-cache">>,
           <<"access-control-allow-origin">> => <<"*">>,
-          <<"access-control-allow-methods">> => <<"GET, POST">>
+          <<"access-control-allow-methods">> => <<"GET, POST">>,
+          <<"access-control-allow-headers">> => <<"Content-Range">>
          },
     StreamRespHeaders = RespHeaders#{<<"content-type">> => <<"application/octet-stream">>},
     QueryString = maps:from_list(cowboy_req:parse_qs(Req)),
@@ -130,6 +131,10 @@ websocket_info(Message, State) ->
         {invalid, Err :: any()}.
 
 -spec handle_request(Req :: cowboy:req(), QueryString :: #{binary() => binary()}) -> handle_request_result().
+
+handle_request(#{method := <<"OPTIONS">>} = _Req, _QueryString) ->
+    options;
+
 handle_request(#{path := <<"/api/v1/files">>}=Req, _QueryString) ->
     handle_files(Req);
 
@@ -237,10 +242,6 @@ handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
         _ ->
             {invalid, invalid_range}
     end;
-
-%% OPTIONS to to-level endpoint
-handle_upload(<<_Id/binary>>, <<>>, #{method := <<"OPTIONS">>} = _Req) ->
-    options;
 
 %% any other method to top-level endpoint
 handle_upload(<<_Id/binary>>, <<>>, _Req) ->
