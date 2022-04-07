@@ -1,8 +1,8 @@
 import React from "react";
-import { ReceiverClient, DownloadMeta, NotFoundError } from "sendfile";
+import { DownloaderClient, DownloadMeta, HTTPErrorResponseError, errorName } from "sendfile";
 
 class DownloaderState {
-  receiverClient?: Promise<ReceiverClient>;
+  downloaderClient?: Promise<DownloaderClient>;
   downloadMeta?: DownloadMeta;
   errorText?: string;
   statusText?: string;
@@ -48,8 +48,7 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
     } else {
       const downloadURL = new URL(props.location.toString());
       try {
-        ReceiverClient.parseDownloadURL(downloadURL);
-        state.receiverClient = ReceiverClient.fromDownloadURL(
+        state.downloaderClient = DownloaderClient.fromDownloadURL(
           downloadURL,
           props.apiEndpoint
         );
@@ -64,28 +63,47 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
   }
 
   componentDidMount(): void {
-    if (this.state.receiverClient) {
-      this.state.receiverClient.catch((err) => {
-        this.setState({ errorText: err.message });
-      });
-      this.state.receiverClient.then((receiverClient) => {
-        receiverClient
-          .fetchMeta()
-          .then((downloadMeta) => {
-            this.setState({ downloadMeta });
-          })
-          .catch((err) => {
-            if (err instanceof NotFoundError) {
-              this.setState({
-                statusText:
-                  "This link is expired or invalid. Ask the sender to re-upload and send you a new link.",
-              });
-            } else {
-              this.setState({ errorText: err.message });
-            }
+    if (this.state.downloaderClient) {
+      this.state.downloaderClient.catch((err) => {
+        if (err.name === errorName("InvalidCipherKeyError")) {
+          this.setState({
+            errorText:
+              "Invalid cipher key. Did you get the entire link?"
           });
+        } else {
+          this.setState({ errorText: err.message });
+        }
+      });
+      this.state.downloaderClient.then(async (downloaderClient) => {
+        try {
+          let downloadMeta = await downloaderClient.fetchMeta();
+          this.setState({ downloadMeta });
+        } catch (err) {
+          let anyErr = err;
+          if (!(err instanceof Error)) {
+            this.setState({ errorText: String(err) });
+          } else if (err.name === errorName("HTTPErrorResponseError")
+            && (anyErr as HTTPErrorResponseError).status === 404) {
+            this.setState({
+              statusText:
+                "This link is expired or invalid. Ask the sender to re-upload and send you a new link.",
+            });
+          } else if (err.name === errorName("DecryptError")) {
+            this.setState({
+              errorText:
+                "Unable to decrypt file metadata. Please check the link or ask your friend to send the file again."
+            });
+          } else {
+            this.setState({ errorText: err.message });
+          }
+        }
       });
     }
+  }
+
+  componentWillUnmount(): void {
+    this.state.downloaderClient?.then(downloaderClient => downloaderClient.free());
+    this.state.downloadMeta?.free();
   }
 
   render(): React.ReactElement {
@@ -176,18 +194,24 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
     if (!this.state.downloadMeta) {
       return "unknown size";
     }
-    return formatBytes(this.state.downloadMeta.fileMeta.fileSize);
+    return formatBytes(Number(this.state.downloadMeta.fileMeta.fileSize));
   }
 
   async downloadContent(downloadMeta: DownloadMeta): Promise<void> {
     this.setState({ progress: new Progress() });
-    const receiverClient = await this.state.receiverClient!;
-    await receiverClient.downloadContent(
+    const downloaderClient = await this.state.downloaderClient!;
+    let file = await downloaderClient.downloadContent(
       downloadMeta,
       (completed: number, total: number): void => {
         this.setState({ progress: new Progress(completed, total) });
       }
     );
+
+    var blobUrl = URL.createObjectURL(new Blob(file.data));
+    var link = document.createElement("a"); // Or maybe get it from the current document
+    link.href = blobUrl;
+    link.download = downloadMeta.fileMeta.fileName;
+    link.click();
   }
 }
 
