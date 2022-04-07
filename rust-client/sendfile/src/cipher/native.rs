@@ -1,47 +1,57 @@
 use std::panic::resume_unwind;
+use std::sync::Arc;
 
-use aes_gcm::aead::{Aead, NewAead, Payload};
-use aes_gcm::Aes256Gcm;
+use aes_gcm::aead::NewAead;
+use aes_gcm::{AeadInPlace, Aes256Gcm};
 use bytes::Bytes;
 use tokio::task::spawn_blocking;
 
-use super::{Aes256GcmKey, Aes256GcmNonce};
 use crate::{Error, Result};
 
+use super::buffer::{ContentCipherBufferCiphertextPartsMut, ContentCipherBufferPartsMut};
+use super::{ContentCipherBuffer, KEY_SIZE};
+
 pub struct NativeCipher {
-    cipher: Aes256Gcm,
+    cipher: Arc<Aes256Gcm>,
 }
 
 #[async_trait::async_trait(?Send)]
 impl super::Cipher for NativeCipher {
-    async fn new(key: &Aes256GcmKey) -> Self {
-        Self { cipher: Aes256Gcm::new(key) }
+    async fn new(key: &[u8; KEY_SIZE]) -> Self {
+        Self { cipher: Arc::new(Aes256Gcm::new(key.into())) }
     }
 
-    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Bytes, aad: Bytes) -> Vec<u8> {
+    async fn encrypt(&self, mut plaintext_and_nonce: ContentCipherBuffer, aad: Vec<u8>) -> Vec<u8> {
         // TODO: handle invalid crypt
-        let cipher = self.cipher.clone();
-        let nonce = nonce.clone();
+        let cipher = Arc::clone(&self.cipher);
         spawn_blocking(move || {
-            let payload = Payload { msg: &plaintext, aad: &aad };
-            cipher.encrypt(&nonce, payload)
+            let ContentCipherBufferPartsMut { nonce, mut data } = plaintext_and_nonce.parts_mut();
+            let payload = data.plaintext_mut();
+
+            let new_tag = cipher
+                .encrypt_in_place_detached((&*nonce).into(), &aad, payload)
+                .expect("encryption failure");
+            *data.ciphertext_parts_mut().tag = new_tag.into();
+            plaintext_and_nonce.into_nonce_and_ciphertext()
         })
         .await
         .unwrap_or_else(|panic| resume_unwind(panic.into_panic()))
-        .expect("encryption failure")
     }
 
     async fn decrypt(
         &self,
-        nonce: &Aes256GcmNonce,
-        ciphertext: Bytes,
-        aad: Bytes,
-    ) -> Result<Vec<u8>> {
-        let cipher = self.cipher.clone();
-        let nonce = nonce.clone();
+        mut ciphertext_and_nonce: ContentCipherBuffer,
+        aad: Vec<u8>,
+    ) -> Result<Bytes> {
+        let cipher = Arc::clone(&self.cipher);
         spawn_blocking(move || {
-            let payload = Payload { msg: &ciphertext, aad: &aad };
-            cipher.decrypt(&nonce, payload).map_err(|_| Error::Decrypt)
+            let ContentCipherBufferPartsMut { nonce, mut data } = ciphertext_and_nonce.parts_mut();
+            let ContentCipherBufferCiphertextPartsMut { payload, tag } =
+                data.ciphertext_parts_mut();
+            cipher
+                .decrypt_in_place_detached((&*nonce).into(), &aad, payload, (&*tag).into())
+                .map_err(|_| Error::Decrypt)?;
+            Ok(ciphertext_and_nonce.into_plaintext())
         })
         .await
         .unwrap_or_else(|panic| resume_unwind(panic.into_panic()))
@@ -57,7 +67,7 @@ mod tests {
         let cipher_key = CipherKey::random();
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
-        let ciphertext = cipher.encrypt(plaintext[..].into()).await;
+        let ciphertext = cipher.encrypt(ContentCipherBuffer::from_plaintext(plaintext)).await;
         assert_eq!(
             plaintext.to_vec(),
             cipher.decrypt(ciphertext.into()).await.unwrap()
@@ -69,7 +79,7 @@ mod tests {
         let cipher_key = CipherKey::random();
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
-        let mut ciphertext = cipher.encrypt(plaintext[..].into()).await;
+        let mut ciphertext = cipher.encrypt(ContentCipherBuffer::from_plaintext(plaintext)).await;
         ciphertext[0] = ciphertext[0] + 1;
         assert!(cipher.decrypt(ciphertext.into()).await.is_err());
     }

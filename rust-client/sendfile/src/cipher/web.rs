@@ -4,8 +4,9 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{window, AesGcmParams, CryptoKey, SubtleCrypto};
 
-use super::{Aes256GcmKey, Aes256GcmNonce};
 use crate::{Error, Result};
+
+use super::{buffer::ContentCipherBufferPartsMut, ContentCipherBuffer, KEY_SIZE};
 
 pub struct WebCipher {
     subtle: SubtleCrypto,
@@ -14,7 +15,7 @@ pub struct WebCipher {
 
 #[async_trait::async_trait(?Send)]
 impl super::Cipher for WebCipher {
-    async fn new(key: &Aes256GcmKey) -> Self
+    async fn new(key: &[u8; KEY_SIZE]) -> Self
     where
         Self: Sized,
     {
@@ -48,42 +49,51 @@ impl super::Cipher for WebCipher {
         Self { subtle, key }
     }
 
-    async fn encrypt(&self, nonce: &Aes256GcmNonce, plaintext: Bytes, aad: Bytes) -> Vec<u8> {
-        let iv = Uint8Array::from(&nonce[..]);
-        let aad = Uint8Array::from(&aad[..]);
-        let data = Uint8Array::from(&plaintext[..]);
+    async fn encrypt(&self, mut plaintext_and_nonce: ContentCipherBuffer, aad: Vec<u8>) -> Vec<u8> {
+        let ContentCipherBufferPartsMut { nonce, mut data } = plaintext_and_nonce.parts_mut();
+        let plaintext = data.plaintext_mut();
 
-        let mut params = AesGcmParams::new("AES-GCM", &iv);
+        let nonce = Uint8Array::from(&nonce[..]);
+        let aad = Uint8Array::from(&aad[..]);
+
+        let mut params = AesGcmParams::new("AES-GCM", &nonce);
         params.additional_data(&aad);
         let encryption_promise = self
             .subtle
-            .encrypt_with_object_and_buffer_source(&params, &self.key, &data)
+            .encrypt_with_object_and_u8_array(&params, &self.key, plaintext)
             .expect("provided valid parameters to SubtleCrypto.encrypt");
         let output = JsFuture::from(encryption_promise)
             .await
             .expect("SubtleCrypto.encrypt promise returns a value");
-        Uint8Array::new(&output).to_vec()
+
+        let ciphertext = data.ciphertext_mut();
+        Uint8Array::new(&output).copy_to(ciphertext);
+        plaintext_and_nonce.into_nonce_and_ciphertext()
     }
 
     async fn decrypt(
         &self,
-        nonce: &Aes256GcmNonce,
-        ciphertext: Bytes,
-        aad: Bytes,
-    ) -> Result<Vec<u8>> {
-        let iv = Uint8Array::from(&nonce[..]);
-        let aad = Uint8Array::from(&aad[..]);
-        let data = Uint8Array::from(&ciphertext[..]);
+        mut ciphertext_and_nonce: ContentCipherBuffer,
+        aad: Vec<u8>,
+    ) -> Result<Bytes> {
+        let ContentCipherBufferPartsMut { nonce, mut data } = ciphertext_and_nonce.parts_mut();
+        let ciphertext = data.ciphertext_mut();
 
-        let mut params = AesGcmParams::new("AES-GCM", &iv);
+        let nonce = Uint8Array::from(&nonce[..]);
+        let aad = Uint8Array::from(&aad[..]);
+
+        let mut params = AesGcmParams::new("AES-GCM", &nonce);
         params.additional_data(&aad);
         let encryption_promise = self
             .subtle
-            .decrypt_with_object_and_buffer_source(&params, &self.key, &data)
+            .decrypt_with_object_and_u8_array(&params, &self.key, ciphertext)
             .expect("provided valid parameters to SubtleCrypto.encrypt");
         let output = JsFuture::from(encryption_promise)
             .await
             .map_err(|_| Error::Decrypt)?;
-        Ok(Uint8Array::new(&output).to_vec())
+
+        let plaintext = data.plaintext_mut();
+        Uint8Array::new(&output).copy_to(plaintext);
+        Ok(ciphertext_and_nonce.into_plaintext())
     }
 }

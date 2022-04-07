@@ -86,7 +86,9 @@ impl UploaderClient {
         provisioned_file: ProvisionedFile<F>,
     ) -> Progress<u64, impl Future<Output = Result<()>> + '_> {
         Progress::new_with(|progress_tx| async move {
-            let encrypted_file = self.api_client.encrypt_file(provisioned_file.file).await;
+            let file = provisioned_file.file;
+            pin_mut!(file);
+            let encrypted_file = self.api_client.encrypt_file(file, provisioned_file.file_size).await?;
             let encrypted_file_len = encrypted_file.len();
 
             // Send a progress update to signal that we're done with encryption and about to start the upload.

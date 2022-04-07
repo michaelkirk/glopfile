@@ -7,14 +7,14 @@ use std::{io, mem};
 
 use bytes::Bytes;
 use futures::{
-    pin_mut, ready, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt,
+    ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt,
     StreamExt, TryStreamExt,
 };
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wasm_bindgen::prelude::*;
 
-use crate::cipher::{CipherKey, ContentCipher};
+use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
 use crate::util::ProgressState;
 use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{mpsc, Error, Result};
@@ -51,7 +51,8 @@ impl ApiClient {
         let file_meta = FileMeta { file_name, file_size };
         let metadata_json = serde_json::to_string(&file_meta)
             .map_err(|_| Error::InvalidInput("unserializable upload"))?;
-        let encrypted_metadata = self.cipher().encrypt(metadata_json.into()).await;
+        let buffer = ContentCipherBuffer::from_plaintext(metadata_json.as_bytes());
+        let encrypted_metadata = self.cipher().encrypt(buffer).await;
 
         let encoded_metadata = base64::encode(encrypted_metadata);
         debug!(
@@ -74,16 +75,15 @@ impl ApiClient {
         Ok(provision_file_response)
     }
 
-    pub async fn encrypt_file<F: AsyncRead + 'static>(&self, file: F) -> EncryptedFile {
-        let mut plaintext = vec![];
-        pin_mut!(file);
-        let _plaintext_len = file.read_to_end(&mut plaintext).await;
+    pub async fn encrypt_file<F: AsyncRead + Unpin>(&self, file: F, file_size: u64) -> io::Result<EncryptedFile> {
+        let plaintext_len = file_size.try_into().expect("file fits in memory");
+        let plaintext = ContentCipherBuffer::read_plaintext_to_end(file, plaintext_len).await?;
         // TODO - verify length matches that in metadata
         // assert_eq!(plaintext_len,
 
         // TODO stream
-        let encrypted_bytes = self.cipher().encrypt(plaintext.into()).await;
-        EncryptedFile { encrypted_bytes: encrypted_bytes.into() }
+        let encrypted_bytes = self.cipher().encrypt(plaintext).await;
+        Ok(EncryptedFile { encrypted_bytes: encrypted_bytes.into() })
     }
 
     pub async fn upload_file(
