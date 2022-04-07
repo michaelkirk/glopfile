@@ -3,6 +3,7 @@
 -behaviour(sendfile_child).
 
 -include_lib("kernel/include/logger.hrl").
+-include("sendfile_websocket_protocol.hrl").
 
 %% API
 -export([start/1, start_link/2, start_download/3, start_upload/3, start_websocket/2, upload_data/2, websocket_data/3, metadata/1]).
@@ -358,6 +359,7 @@ handle_upload_data_call(Data, _From, #state{downloader = #downloader{}}=State) -
     {_, DataBin} = Data,
     NewPosition = Position + iolist_size(DataBin),
     send_data(Data, State#state.downloader),
+    send_upload_progress(NewPosition, State#state.uploader_ws),
     NewState = State#state{downloader = State#state.downloader#downloader{position = NewPosition},
                            uploader = State#state.uploader#uploader{position = NewPosition}},
     {reply, ok, NewState};
@@ -447,3 +449,13 @@ terminate_downloader_ws(#downloader_ws{pid = Pid, monitor = Monitor}, Err) ->
 -spec send_data(data(), downloader()) -> _.
 send_data(Data, #downloader{pid = Pid, tag = Tag}) ->
     Pid ! {Tag, Data}.
+
+-spec send_upload_progress(non_neg_integer(), uploader_ws() | undefined) -> ok.
+send_upload_progress(_Pos, undefined) ->
+    ok;
+send_upload_progress(Pos, #uploader_ws{pid = WsPid}) ->
+    Msg = #sendfile_websocket_protocol_web_socket_message{
+             inner = {upload_data_ack, #sendfile_websocket_protocol_upload_data_ack{offset = Pos}}
+            },
+    MsgData = sendfile_websocket_protocol:encode_msg(Msg),
+    sendfile_websocket:send(WsPid, [{binary, MsgData}]).
