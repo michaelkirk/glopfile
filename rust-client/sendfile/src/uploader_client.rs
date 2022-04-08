@@ -103,9 +103,8 @@ impl UploaderClient {
                     pin_mut!(p2p_task, relayed_task);
                     loop {
                         futures::select! {
-                            p2p_result = p2p_task => match p2p_result {
-                                Ok(()) => break Ok(()),
-                                Err(error) => warn!("error uploading via p2p; continuing relayed: {error}"),
+                            p2p_result = p2p_task => if let Err(error) = p2p_result {
+                                warn!("error uploading via p2p; continuing relayed: {error}");
                             },
                             relayed_result = relayed_task => break relayed_result,
                         }

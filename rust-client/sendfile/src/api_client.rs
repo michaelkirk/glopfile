@@ -10,6 +10,7 @@ use futures::{
     ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt,
     StreamExt, TryStreamExt,
 };
+use reqwest::{header, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wasm_bindgen::prelude::*;
@@ -92,6 +93,8 @@ impl ApiClient {
         upload_path: &str,
     ) -> Result<()> {
         let url = self.endpoint.join(upload_path).expect("bad endpoint?");
+        let file_size = file.encrypted_bytes.len();
+        let last_position = file_size - 1;
 
         let mut client_builder = self.http_client_builder();
 
@@ -102,21 +105,52 @@ impl ApiClient {
                 client_builder = client_builder;
             }
         }
-        let response = client_builder
+
+        let client = client_builder
             .build()
-            .expect("invalid timeout for http client?")
-            .post(url)
-            .body(file.encrypted_bytes)
-            .send()
-            .await?;
+            .expect("invalid timeout for http client?");
 
-        if !response.status().is_success() {
-            return Err(Error::ClientHttpErrorResponse {
-                message: "failed to upload content",
-                status: response.status().as_u16(),
-            });
+        let mut position = 0;
+        loop {
+            let send_bytes = file.encrypted_bytes.slice(position..);
+            let response = client
+                .post(url.clone())
+                .body(send_bytes)
+                .header(header::CONTENT_RANGE, format!("bytes {position}-{last_position}/{file_size}"))
+                .send()
+                .await?;
+
+            match response.status() {
+                status if status.is_success() => break,
+                StatusCode::CONFLICT => {
+                    let response_bytes = response.bytes().await?;
+                    let conflict_response: UploadConflictResponse =
+                        serde_json::from_slice(&response_bytes).map_err(|error| {
+                            error!("invalid server 409 Conflict response: {}", error);
+                            Error::InvalidServerResponse("conflict error response")
+                        })?;
+                    position =
+                        usize::try_from(conflict_response.position).expect("file fits in memory");
+                    if position == file_size {
+                        break;
+                    } else if position > file_size {
+                        let error_message = format!(
+                            "Downloader requested file position {position} \
+                             which is greater than file size {file_size}.",
+                        );
+                        return Err(Error::InvalidPeerMessage { source: error_message.into() });
+                    } else {
+                        // fall through and retry
+                    }
+                }
+                status => {
+                    return Err(Error::ClientHttpErrorResponse {
+                        message: "failed to upload content",
+                        status: status.as_u16(),
+                    })
+                }
+            }
         }
-
         Ok(())
     }
 
@@ -180,6 +214,7 @@ impl ApiClient {
             .join(&download_meta.encrypted_content_url)
             .map_err(|_| Error::InvalidInput("bad content url"))?;
         let content_size = download_meta.file_meta.file_size;
+        let content_offset = decrypted_file.offset();
 
         let mut client_builder = self.http_client_builder();
 
@@ -195,6 +230,7 @@ impl ApiClient {
             .build()
             .expect("invalid timeout for http client?")
             .get(content_url)
+            .header(header::RANGE, format!("bytes={content_offset}-"))
             .send()
             .await?;
 
@@ -217,8 +253,10 @@ impl ApiClient {
         response_bytes_stream
             .inspect_ok(|data| {
                 content_downloaded += u64::try_from(data.len()).unwrap();
-                let _ignore = progress_tx
-                    .send(ProgressState { current: content_downloaded, total: content_size });
+                let _ignore = progress_tx.send(ProgressState {
+                    current: content_offset + content_downloaded,
+                    total: content_size,
+                });
             })
             .forward(&mut decrypted_file_sink)
             .await?;
@@ -236,17 +274,22 @@ impl ApiClient {
             .endpoint
             .join(&download_meta.encrypted_content_url)
             .map_err(|_| Error::InvalidInput("bad content url"))?;
-        let content_size = download_meta.file_meta.file_size;
 
         let request = self.http_client().get(content_url);
-        let request = request.header("Content-Range", format!("bytes {content_size}-/*"));
+        let request = request.header(header::RANGE, format!("bytes=-0"));
 
         let response = request.send().await?;
-        if !response.status().is_success() {
-            return Err(Error::ClientHttpErrorResponse {
-                message: "failed to finish download",
-                status: response.status().as_u16(),
-            });
+        match response.status() {
+            status if status.is_success() => (),
+            StatusCode::NOT_FOUND => {
+                // The session was already terminated; treat this as a success.
+            }
+            status => {
+                return Err(Error::ClientHttpErrorResponse {
+                    message: "failed to finish download",
+                    status: status.as_u16(),
+                });
+            }
         }
 
         Ok(())
@@ -342,6 +385,11 @@ pub(crate) struct ProvisionFileResponse {
     pub(crate) download_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct UploadConflictResponse {
+    pub(crate) position: u64,
+}
+
 #[derive(Clone, Debug)]
 #[wasm_bindgen(getter_with_clone)]
 pub struct DownloadMeta {
@@ -408,6 +456,21 @@ enum DecryptedFileWriteState {
     },
     Complete,
     Poisoned,
+}
+
+impl DecryptedFile<'_> {
+    pub(crate) fn offset(&self) -> u64 {
+        let shared = self.shared.lock().unwrap();
+        match &shared.state {
+            DecryptedFileWriteState::Unwritten { data, .. } => {
+                data.len().try_into().expect("file fits in memory")
+            }
+            DecryptedFileWriteState::Pending { .. } | DecryptedFileWriteState::Complete => {
+                self.file_size
+            }
+            DecryptedFileWriteState::Poisoned => panic!("invalid state"),
+        }
+    }
 }
 
 impl AsyncWrite for DecryptedFile<'_> {
