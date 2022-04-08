@@ -6,7 +6,8 @@
 -include("sendfile_websocket_protocol.hrl").
 
 %% API
--export([start/1, start_link/2, start_download/3, start_upload/3, start_websocket/2, upload_data/2, websocket_data/3, metadata/1]).
+-export([start/1, start_link/2, start_download/3, finish_download/1, start_upload/3, start_websocket/2, upload_data/2,
+         websocket_data/3, metadata/1]).
 -ignore_xref([start_link/2]).                   % xref doesn't take simple_one_for_one children into account
 
 %% sendfile_child callbacks
@@ -51,23 +52,31 @@
          size :: pos_integer()}).
 -type pending_data() :: #pending_data{}.
 
+-record(pending_error,
+        {error :: upload_error()}).
+-type pending_error() :: #pending_error{}.
+
 -record(state,
         {id :: binary(),
          metadata :: binary(),
-         downloader = undefined :: downloader() | undefined,
+         downloader = undefined :: downloader() | finished | undefined,
          downloader_ws = undefined :: downloader_ws() | undefined,
          uploader = undefined :: uploader() | undefined,
          uploader_ws = undefined :: uploader_ws() | undefined,
-         pending = undefined :: pending_data() | undefined}).
+         pending = undefined :: pending_data() | pending_error() | undefined}).
 -type state() :: #state{}.
 
 -record(start_download_call, {from :: downloader()}).
 -type start_download_call() :: #start_download_call{}.
 -type start_download_result() :: {ok, SessionPid :: pid()}.
 
+-record(finish_download_call, {}).
+-type finish_download_call() :: #finish_download_call{}.
+-type finish_download_result() :: ok.
+
 -record(start_upload_call, {from :: uploader()}).
 -type start_upload_call() :: #start_upload_call{}.
--type start_upload_result() :: {ok, SessionPid :: pid()} | {position, non_neg_integer()}.
+-type start_upload_result() :: {ok, SessionPid :: pid()} | upload_error().
 
 -record(start_websocket_call, {from :: uploader_ws() | downloader_ws()}).
 -type start_websocket_call() :: #start_websocket_call{}.
@@ -75,7 +84,7 @@
 
 -record(upload_data_call, {data :: data()}).
 -type upload_data_call() :: #upload_data_call{}.
--type upload_data_result() :: ok | {error, data_pending | connection_replaced} | {position, non_neg_integer()}.
+-type upload_data_result() :: ok | {error, data_pending} | upload_error().
 
 -type websocket_data() :: {text | binary, iodata()}.
 -record(websocket_data_cast, {frame :: websocket_data(), from :: sendfile_websocket:direction()}).
@@ -85,7 +94,8 @@
 -type metadata_call() :: #metadata_call{}.
 -type metadata_result() :: {ok, Metadata :: binary()}.
 
--type call() :: start_download_call() | start_upload_call() | start_websocket_call() | upload_data_call() | metadata_call().
+-type call() :: start_download_call() | finish_download_call() | start_upload_call() | start_websocket_call() |
+                upload_data_call() | metadata_call().
 
 -type call_result() :: {error, sendfile_session_table:get_error()}.
 
@@ -93,7 +103,7 @@
 
 -type download_ws_error() :: connection_replaced.
 
--type upload_error() :: connection_replaced | wrong_position.
+-type upload_error() :: {error, connection_replaced} | {position, non_neg_integer()} | finished.
 
 -type upload_ws_error() :: connection_replaced.
 
@@ -114,6 +124,10 @@ start_link(Id, Metadata) ->
 -spec start_download(binary(), Tag :: any(), Position :: non_neg_integer()) -> start_download_result() | call_result().
 start_download(<<Id/binary>>, Tag, Position) ->
     call(Id, #start_download_call{from = #downloader{pid = self(), tag = Tag, position = Position}}, ?TIMEOUT).
+
+-spec finish_download(binary()) -> finish_download_result() | call_result().
+finish_download(<<Id/binary>>) ->
+    call(Id, #finish_download_call{}, ?TIMEOUT).
 
 -spec start_upload(binary(), Tag :: any(), Position :: non_neg_integer()) -> start_upload_result() | call_result().
 start_upload(<<Id/binary>>, Tag, Position) ->
@@ -173,6 +187,9 @@ handle_call(#metadata_call{}, From, State) ->
 handle_call(#start_download_call{from = Downloader}, From, State) ->
     handle_start_download_call(Downloader, From, State);
 
+handle_call(#finish_download_call{}, From, State) ->
+    handle_finish_download_call(From, State);
+
 handle_call(#start_upload_call{from = Uploader}, From, State) ->
     handle_start_upload_call(Uploader, From, State);
 
@@ -204,8 +221,7 @@ handle_info({'DOWN', _Mon, process, Pid, Info}, #state{downloader_ws = #download
 
 handle_info({'DOWN', _Mon, process, Pid, Info}, #state{uploader = #uploader{pid = Pid}}=State) ->
     ?LOG_DEBUG("uploader stopped: ~p", [Info]),
-    NewState = handle_uploader_disconnected(State),
-    {noreply, NewState};
+    handle_uploader_disconnected(State);
 
 handle_info({'DOWN', _Mon, process, Pid, Info}, #state{uploader_ws = #uploader_ws{pid = Pid}}=State) ->
     ?LOG_DEBUG("uploader websocket stopped: ~p", [Info]),
@@ -263,8 +279,7 @@ handle_start_download_call(Downloader, _From, State) ->
             %% connected uploader position doesn't match new downloader position
             #uploader{position = UploaderPosition}
               when UploaderPosition =/= Downloader#downloader.position ->
-                terminate_uploader(State#state.uploader, wrong_position),
-                State#state{uploader = undefined};
+                terminate_uploader(State, {position, Downloader#downloader.position});
             _ ->
                 State
         end,
@@ -272,12 +287,27 @@ handle_start_download_call(Downloader, _From, State) ->
     {reply, {ok, self()}, UploaderUpdatedState#state{downloader = Downloader#downloader{monitor = Monitor}}}.
 
 
+-spec handle_finish_download_call(downloader(), state()) -> handle_call_result(finish_download_result()).
+handle_finish_download_call(_From, State) ->
+    case State#state.downloader of
+        undefined -> ok;
+        finished -> ok;
+        OldDownloader -> terminate_downloader(OldDownloader, connection_replaced)
+    end,
+    NewState = terminate_uploader(State#state{downloader = finished}, finished),
+    case NewState#state.uploader of
+        undefined ->
+            {stop, normal, ok, NewState};
+        _ ->
+            {reply, ok, NewState}
+    end.
+
 -spec handle_start_upload_call(uploader(), From :: {pid(), any()}, state()) -> handle_call_result(start_upload_result()).
 %% another uploader is already connected
-handle_start_upload_call(NewUploader, From, #state{uploader = #uploader{}=OldUploader}=State) ->
-    terminate_uploader(OldUploader, connection_replaced),
+handle_start_upload_call(NewUploader, From, #state{uploader = #uploader{}}=State) ->
+    NewState = terminate_uploader(State, {error, connection_replaced}),
     %% remove the uploader and recurse
-    handle_start_upload_call(NewUploader, From, State#state{uploader = undefined});
+    handle_start_upload_call(NewUploader, From, NewState#state{uploader = undefined});
 
 %% new uploader position doesn't match connected downloader position
 handle_start_upload_call(Uploader, _From, #state{downloader = #downloader{position = Position}}=State)
@@ -296,6 +326,8 @@ handle_start_upload_call(Uploader, From, State) ->
         #pending_data{}=Pending ->
             UpdatedWaiterPending = Pending#pending_data{waiter = {start_upload, From}},
             {noreply, State#state{uploader = Uploader#uploader{monitor = Monitor}, pending = UpdatedWaiterPending}};
+        #pending_error{}=Pending ->
+            {reply, Pending#pending_error.error, State#state{pending = undefined}};
         _ ->
             {reply, {ok, self()}, State#state{uploader = Uploader#uploader{monitor = Monitor}}}
     end.
@@ -352,6 +384,10 @@ handle_upload_data_call(_Data, _From, #state{uploader = undefined}=State) ->
 handle_upload_data_call(_Data, _From, #state{pending = #pending_data{}}=State) ->
     {reply, {error, data_pending}, State};
 
+%% an upload error is pending
+handle_upload_data_call(_Data, _From, #state{pending = #pending_error{}}=State) ->
+    {reply, State#state.pending#pending_error.error, State};
+
 %% uploader and downloader are both connected
 handle_upload_data_call(Data, _From, #state{downloader = #downloader{}}=State) ->
     %% assert that downloader position matches uploader position
@@ -388,9 +424,20 @@ handle_websocket_data_cast(_Frame, _Direction, State) ->
     {noreply, State}.
 
 
--spec handle_uploader_disconnected(state()) -> state().
+-spec handle_uploader_disconnected(state()) -> handle_cast_result().
+%% download is finished
+handle_uploader_disconnected(#state{downloader = finished}=State) ->
+    {stop, normal, State#state{uploader = undefined}};
+
+%% download is not finished
 handle_uploader_disconnected(State) ->
-    State#state{uploader = undefined}.
+    %% clear any pending error for this specific uploader
+    NewPending =
+        case State#state.pending of
+            #pending_error{} -> undefined;
+            Pending -> Pending
+        end,
+    {noreply, State#state{uploader = undefined, pending = NewPending}}.
 
 
 -spec handle_uploader_ws_disconnected(state()) -> state().
@@ -401,7 +448,7 @@ handle_uploader_ws_disconnected(State) ->
 -spec handle_downloader_disconnected(state(), any()) -> handle_cast_result().
 
 handle_downloader_disconnected(State, normal) ->
-    NewState = State#state{downloader = undefined},
+    NewState = State#state{downloader = finished},
     {stop, normal, NewState};
 
 handle_downloader_disconnected(State, _Info) ->
@@ -426,10 +473,26 @@ start_upload_reply(From, Reply) ->
 upload_data_reply(From, Reply) ->
     gen_server:reply(From, Reply).
 
--spec terminate_uploader(uploader(), upload_error()) -> _.
-terminate_uploader(#uploader{pid = Pid, tag = Tag, monitor = Monitor}, Err) ->
-    Pid ! {Tag, {error, Err}},
-    demonitor(Monitor).
+
+-spec terminate_uploader(state(), upload_error()) -> state().
+%% no uploader is connected
+terminate_uploader(#state{uploader = undefined}=State, _Err) ->
+    State;
+
+%% the uploader is waiting on a call
+terminate_uploader(#state{uploader = #uploader{}, pending = #pending_data{waiter = {WaiterCall, From}}}=State, Err) ->
+    demonitor(State#state.uploader#uploader.monitor),
+    case WaiterCall of
+        start_upload -> start_upload_reply(From, Err);
+        upload_data -> upload_data_reply(From, Err)
+    end,
+    State#state{uploader = undefined};
+
+%% the uploader is not waiting on a call
+terminate_uploader(#state{uploader = #uploader{}}=State, Err) ->
+    %% queue the uploader error so it'll be returned from the next call by the uploader
+    State#state{pending = #pending_error{error = Err}}.
+
 
 -spec terminate_uploader_ws(uploader_ws(), upload_ws_error()) -> _.
 terminate_uploader_ws(#uploader_ws{pid = Pid, monitor = Monitor}, Err) ->

@@ -204,6 +204,7 @@ handle_download(<<_Id/binary>>, <<>>, _Req) ->
 handle_download(<<Id/binary>>, <<"content">>, #{method := <<"GET">>}=Req) ->
     case content_stream_init(Id, Req) of
         {ok, State} -> {stream, State};
+        finished -> {ok, <<>>};
         {error, not_found} -> not_found
     end;
 
@@ -228,19 +229,23 @@ handle_download(_Id, _Path, _Req) ->
 %% POST to top-level endpoint
 handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
     Tag = make_ref(),
-    case cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
-        {bytes, [{ReqPosition, infinity}]} ->
+    case parse_upload_position(Req) of
+        {position, ReqPosition} ->
             case sendfile_session:start_upload(Id, Tag, ReqPosition) of
                 {ok, Pid} ->
                     ok = cowboy_req:inform(100, Req),
                     upload(Pid, Req);
                 {position, NewPosition} ->
                     {conflict, jsone:encode(upload_conflict_response(NewPosition))};
+                finished ->
+                    {ok, <<>>};
+                {error, connection_replaced} ->
+                    {ok, <<>>};
                 {error, not_found} ->
                     not_found
             end;
-        _ ->
-            {invalid, invalid_range}
+        {error, Err} ->
+            {invalid, {invalid_range, Err}}
     end;
 
 %% any other method to top-level endpoint
@@ -265,6 +270,7 @@ handle_upload(_Id, _Path, _Req) ->
 handle_content(<<Id/binary>>, <<>>, #{method := <<"GET">>}=Req) ->
     case content_stream_init(Id, Req) of
         {ok, State} -> {stream, State};
+        finished -> {ok, <<>>};
         {error, not_found} -> not_found
     end;
 
@@ -279,6 +285,26 @@ handle_content(_Id, _Path, _Req) ->
 %%
 %% upload functions
 %%
+
+-spec parse_upload_position(cowboy_req:req()) -> {position, non_neg_integer()} | {error, any()}.
+parse_upload_position(Req) ->
+    case cowboy_req:header(<<"content-range">>, Req) of
+        undefined ->
+            {position, 0};
+        <<ContentRangeBin/binary>> ->
+            try cow_http_hd:parse_content_range(ContentRangeBin) of
+                {bytes, '*', _ContentSize} ->
+                    {position, 0};
+                {bytes, ContentStart, ContentEnd, ContentSize}
+                  when ContentSize =:= ContentEnd + 1 ->
+                    {position, ContentStart};
+                {bytes, _ContentStart, _ContentEnd, _ContentSize} ->
+                    {error, partial_range_unimplemented}
+            catch
+                _:ParseErr ->
+                    {error, ParseErr}
+            end
+    end.
 
 -spec upload(_, _) -> handle_request_result().
 upload(Pid, Req) ->
@@ -298,6 +324,8 @@ upload(Pid, Req) ->
               end;
         {position, NewPosition} ->
             {conflict, jsone:encode(upload_conflict_response(NewPosition)), BodyReadReq};
+        finished ->
+            {ok, <<>>, BodyReadReq};
         {error, connection_replaced} ->
             {ok, <<>>, BodyReadReq}
     end.
@@ -310,11 +338,11 @@ upload_conflict_response(Position) ->
 %% content stream functions
 %%
 
--spec content_stream_init(binary(), cowboy_req:req()) -> {ok, content_stream_state()} | {error, not_found}.
+-spec content_stream_init(binary(), cowboy_req:req()) -> {ok, content_stream_state()} | {error, not_found} | finished.
 content_stream_init(<<Id/binary>>, Req) ->
-    Tag = make_ref(),
-    case cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
-        {bytes, [{ReqPosition, infinity}]} ->
+    case parse_download_position(Req) of
+        {position, ReqPosition} ->
+            Tag = make_ref(),
             case sendfile_session:start_download(Id, Tag, ReqPosition) of
                 {ok, Pid} ->
                     monitor(process, Pid),
@@ -322,8 +350,14 @@ content_stream_init(<<Id/binary>>, Req) ->
                 {error, not_found} ->
                     {error, not_found}
             end;
-        _ ->
-            {invalid, invalid_range}
+        eof ->
+            case sendfile_session:finish_download(Id) of
+                ok -> finished;
+                {error, not_found} ->
+                    {error, not_found}
+            end;
+        {error, Err} ->
+            {invalid, {invalid_range, Err}}
     end.
 
 -spec content_stream_info(Msg :: any(), cowboy_req:req(), content_stream_state()) -> {ok | stop, cowboy_req:req(), content_stream_state()}.
@@ -348,6 +382,22 @@ content_stream_info({'DOWN', _Mon, process, Pid, Info}, _Req, #content_stream_st
 content_stream_info(Msg, Req, State) ->
     ?LOG_WARNING("unknown message: ~p", [Msg]),
     {ok, Req, State}.
+
+-spec parse_download_position(cowboy_req:req()) -> {position, non_neg_integer()} | eof | {error, any()}.
+parse_download_position(Req) ->
+    try cowboy_req:parse_header(<<"range">>, Req, {bytes, [{0, infinity}]}) of
+        {bytes, [{Start, infinity}]} ->
+            {position, Start};
+        {bytes, [0]} ->
+            eof;
+        {bytes, [{_Start, _End}]} ->
+            {error, partial_range_unimplemented};
+        {bytes, _Ranges} ->
+            {error, multiple_ranges_unimplemented}
+    catch
+        _:ParseErr ->
+            {error, ParseErr}
+    end.
 
 %%
 %% ID encoding/decoding
