@@ -5,9 +5,9 @@ use datachannel::{
 };
 use webrtc_sdp::error::SdpParserError;
 
-use crate::{mpsc, websocket, Error};
+use crate::{websocket, Error};
 
-use super::PeerToPeerClientEvent;
+use super::{PeerConnectionEvent, PeerConnectionEventHandler};
 
 pub enum NativeRtc {}
 
@@ -28,11 +28,11 @@ pub enum ConvertSessionDescriptionError {
 }
 
 struct NativePeerConnectionHandler {
-    tx: mpsc::Sender<PeerToPeerClientEvent>,
+    tx: PeerConnectionEventHandler,
 }
 
 struct NativeDataChannelHandler {
-    tx: mpsc::Sender<PeerToPeerClientEvent>,
+    tx: PeerConnectionEventHandler,
 }
 
 impl super::Rtc for NativeRtc {
@@ -40,7 +40,7 @@ impl super::Rtc for NativeRtc {
 
     fn new_peer_connection(
         stun_servers: &[&str],
-        tx: mpsc::Sender<PeerToPeerClientEvent>,
+        tx: PeerConnectionEventHandler,
     ) -> Result<Self::PeerConnection, Error> {
         let peer_connection_handler = NativePeerConnectionHandler { tx };
 
@@ -62,7 +62,7 @@ impl super::RtcPeerConnection for NativePeerConnection {
         &mut self,
         id: u16,
         label: &str,
-        tx: mpsc::Sender<PeerToPeerClientEvent>,
+        tx: PeerConnectionEventHandler,
     ) -> Result<Self::DataChannel, Error> {
         let data_channel_handler = NativeDataChannelHandler { tx };
         let data_channel_init = DataChannelInit::default()
@@ -138,12 +138,7 @@ impl PeerConnectionHandler for NativePeerConnectionHandler {
                 (&session_description).into(),
             )),
         };
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::OutgoingSignalingMessage(
-                signaling_message,
-            ));
+        self.tx.handle(PeerConnectionEvent::OutgoingSignalingMessage(signaling_message));
     }
 
     fn on_candidate(&mut self, candidate: IceCandidate) {
@@ -154,11 +149,7 @@ impl PeerConnectionHandler for NativePeerConnectionHandler {
             )),
         };
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::OutgoingSignalingMessage(
-                signaling_message,
-            ));
+        self.tx.handle(PeerConnectionEvent::OutgoingSignalingMessage(signaling_message));
     }
 
     fn on_connection_state_change(&mut self, state: ConnectionState) {
@@ -184,7 +175,7 @@ impl DataChannelHandler for NativeDataChannelHandler {
     fn on_open(&mut self) {
         debug!("RTC data channel opened");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self.tx.send(PeerToPeerClientEvent::DataChannelOpened);
+        self.tx.handle(PeerConnectionEvent::DataChannelOpened);
     }
 
     fn on_closed(&mut self) {
@@ -194,18 +185,14 @@ impl DataChannelHandler for NativeDataChannelHandler {
     fn on_error(&mut self, error: &str) {
         debug!("RTC data channel error: {error}");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::DataChannelError(error.into()));
+        self.tx.handle(PeerConnectionEvent::DataChannelError(error.into()));
     }
 
     fn on_message(&mut self, msg: &[u8]) {
         let len = msg.len();
         trace!("RTC data channel message received of len {len}");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self.tx.send(PeerToPeerClientEvent::DataChannelMessage(
-            msg.to_vec().into(),
-        ));
+        self.tx.handle(PeerConnectionEvent::DataChannelMessage(msg.to_vec().into()));
     }
 
     fn on_buffered_amount_low(&mut self) {

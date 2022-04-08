@@ -10,16 +10,17 @@ use web_sys::{
     RtcPeerConnectionIceEvent, RtcSdpType, RtcSessionDescription, RtcSessionDescriptionInit,
 };
 
+use crate::p2p::PeerConnectionEvent;
 use crate::util::web::Callbacks;
-use crate::{mpsc, websocket, Error};
+use crate::{websocket, Error};
 
-use super::PeerToPeerClientEvent;
+use super::PeerConnectionEventHandler;
 
 pub enum WebRtc {}
 
 pub struct WebRtcPeerConnection {
     rtc: RtcPeerConnection,
-    tx: mpsc::Sender<PeerToPeerClientEvent>,
+    tx: PeerConnectionEventHandler,
     #[allow(unused)] // callbacks are held to maintain their reference counts
     callbacks: Callbacks,
 }
@@ -54,10 +55,8 @@ impl WebRtcPeerConnection {
                 (&local_description).into(),
             )),
         };
-        // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        let _ignore = self
-            .tx
-            .send(PeerToPeerClientEvent::OutgoingSignalingMessage(
+        self.tx
+            .handle(PeerConnectionEvent::OutgoingSignalingMessage(
                 signaling_message,
             ));
 
@@ -70,7 +69,7 @@ impl super::Rtc for WebRtc {
 
     fn new_peer_connection(
         stun_servers: &[&str],
-        tx: mpsc::Sender<PeerToPeerClientEvent>,
+        tx: PeerConnectionEventHandler,
     ) -> Result<Self::PeerConnection, Error> {
         let mut callbacks = Callbacks::default();
 
@@ -100,8 +99,7 @@ impl super::Rtc for WebRtc {
                             (&candidate).into(),
                         )),
                     };
-                    // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-                    let _ignore = tx.send(PeerToPeerClientEvent::OutgoingSignalingMessage(
+                    tx.handle(PeerConnectionEvent::OutgoingSignalingMessage(
                         signaling_message,
                     ));
                 }
@@ -172,7 +170,7 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
         &mut self,
         id: u16,
         label: &str,
-        tx: mpsc::Sender<PeerToPeerClientEvent>,
+        tx: PeerConnectionEventHandler,
     ) -> Result<Self::DataChannel, Error> {
         let mut callbacks = Callbacks::default();
 
@@ -189,8 +187,7 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
             let tx = tx.clone();
             move |_event: Event| {
                 debug!("RTC data channel opened");
-                // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-                let _ignore = tx.send(PeerToPeerClientEvent::DataChannelOpened);
+                tx.handle(PeerConnectionEvent::DataChannelOpened);
             }
         });
 
@@ -207,8 +204,7 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
             move |event: ErrorEvent| {
                 let error = WebRtcError::from(event.error());
                 debug!("RTC data channel error: {error}");
-                // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-                let _ignore = tx.send(PeerToPeerClientEvent::DataChannelError(Box::new(error)));
+                tx.handle(PeerConnectionEvent::DataChannelError(Box::new(error)));
             }
         });
 
@@ -225,8 +221,7 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
 
                 let msg = Uint8Array::new(msg_buffer.as_ref()).to_vec();
 
-                // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-                let _ignore = tx.send(PeerToPeerClientEvent::DataChannelMessage(msg.into()));
+                tx.handle(PeerConnectionEvent::DataChannelMessage(msg.into()));
             }
         });
 
