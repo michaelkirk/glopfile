@@ -64,7 +64,7 @@ init(Req, _InitialState) ->
           <<"pragma">>        => <<"no-cache">>,
           <<"access-control-allow-origin">> => <<"*">>,
           <<"access-control-allow-methods">> => <<"GET, POST">>,
-          <<"access-control-allow-headers">> => <<"Content-Range">>
+          <<"access-control-allow-headers">> => <<"Content-Range, Range">>
          },
     StreamRespHeaders = RespHeaders#{<<"content-type">> => <<"application/octet-stream">>},
     QueryString = maps:from_list(cowboy_req:parse_qs(Req)),
