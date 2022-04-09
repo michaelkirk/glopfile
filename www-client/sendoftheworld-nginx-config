@@ -3,6 +3,11 @@ server {
     root           /var/www/s.endoftheworl.de;
     index          index.html;
 
+    include mime.types;
+    types {
+        application/wasm wasm;
+    }
+
     gzip             on;
     gzip_comp_level  3;
     gzip_types       text/plain text/css application/javascript image/*;
