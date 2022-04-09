@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -e
+set -x
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd $REPO_ROOT
+
+rm -fr rust/pkg
+wasm-pack build --release --target bundler rust
+
+rm -fr sendfile/dist
+rm -fr sendfile/node_modules
+(cd sendfile && yarn install && yarn tsc)
+
+rm -fr sendfile-ui/build
+rm -fr sendfile-ui/node_modules
+
+# Build for deploy
+(cd sendfile-ui && yarn install && yarn build)
+(cd sendfile-ui/build && find . -type f -name \*.wasm | xargs gzip -9)
+
+# Serve for dev
+# (cd sendfile-ui && yarn install && yarn start)
