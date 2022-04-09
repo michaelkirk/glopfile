@@ -105,7 +105,10 @@ impl super::RtcPeerConnection for NativePeerConnection {
             .map(|sdp| (&sdp.sdp_type).into())
     }
 
-    async fn add_remote_candidate(&mut self, candidate: websocket::IceCandidate) -> Result<(), Error> {
+    async fn add_remote_candidate(
+        &mut self,
+        candidate: websocket::IceCandidate,
+    ) -> Result<(), Error> {
         let candidate = candidate.try_into().map_err(Error::rtc_err)?;
         self.rtc
             .add_remote_candidate(&candidate)
@@ -138,7 +141,10 @@ impl PeerConnectionHandler for NativePeerConnectionHandler {
                 (&session_description).into(),
             )),
         };
-        self.tx.handle(PeerConnectionEvent::OutgoingSignalingMessage(signaling_message));
+        self.tx
+            .handle(PeerConnectionEvent::OutgoingSignalingMessage(
+                signaling_message,
+            ));
     }
 
     fn on_candidate(&mut self, candidate: IceCandidate) {
@@ -149,7 +155,10 @@ impl PeerConnectionHandler for NativePeerConnectionHandler {
             )),
         };
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        self.tx.handle(PeerConnectionEvent::OutgoingSignalingMessage(signaling_message));
+        self.tx
+            .handle(PeerConnectionEvent::OutgoingSignalingMessage(
+                signaling_message,
+            ));
     }
 
     fn on_connection_state_change(&mut self, state: ConnectionState) {
@@ -185,14 +194,16 @@ impl DataChannelHandler for NativeDataChannelHandler {
     fn on_error(&mut self, error: &str) {
         debug!("RTC data channel error: {error}");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        self.tx.handle(PeerConnectionEvent::DataChannelError(error.into()));
+        self.tx
+            .handle(PeerConnectionEvent::DataChannelError(error.into()));
     }
 
     fn on_message(&mut self, msg: &[u8]) {
         let len = msg.len();
         trace!("RTC data channel message received of len {len}");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
-        self.tx.handle(PeerConnectionEvent::DataChannelMessage(msg.to_vec().into()));
+        self.tx
+            .handle(PeerConnectionEvent::DataChannelMessage(msg.to_vec().into()));
     }
 
     fn on_buffered_amount_low(&mut self) {

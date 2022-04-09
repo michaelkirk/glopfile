@@ -5,7 +5,7 @@
     clippy::let_and_return,
     clippy::redundant_pattern_matching,
     clippy::len_without_is_empty,
-    clippy::useless_format,
+    clippy::useless_format
 )]
 
 #[macro_use]

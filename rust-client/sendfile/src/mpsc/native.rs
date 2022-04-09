@@ -1,6 +1,6 @@
 use futures::StreamExt;
-pub use tokio_stream::wrappers::UnboundedReceiverStream as Receiver;
 pub use tokio::sync::mpsc::UnboundedSender as Sender;
+pub use tokio_stream::wrappers::UnboundedReceiverStream as Receiver;
 
 use super::{RecvError, RecvTimeoutError, SendError};
 
@@ -24,7 +24,8 @@ impl<T: Send> super::ChannelReceive<T> for Receiver<T> {
 
     async fn recv_timeout(&mut self, timeout: instant::Duration) -> Result<T, RecvTimeoutError> {
         let result = tokio::time::timeout(timeout, self.next()).await;
-        let result = result.map_err(|tokio::time::error::Elapsed { .. }| RecvTimeoutError::Timeout)?;
+        let result =
+            result.map_err(|tokio::time::error::Elapsed { .. }| RecvTimeoutError::Timeout)?;
         result.ok_or(RecvTimeoutError::Disconnected)
     }
 }

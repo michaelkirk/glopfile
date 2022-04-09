@@ -1,5 +1,5 @@
-use js_sys::{JSON, JsString};
 use js_sys::{Array, ArrayBuffer, Uint8Array};
+use js_sys::{JsString, JSON};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;

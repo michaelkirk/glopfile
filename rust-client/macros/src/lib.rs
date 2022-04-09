@@ -5,7 +5,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use proc_macro_error::abort_call_site;
 use quote::quote;
-use syn::{parse_macro_input, Fields, LitStr, ItemStruct, Field};
+use syn::{parse_macro_input, Field, Fields, ItemStruct, LitStr};
 
 use crate::derive_error::TypescriptErrorField;
 
@@ -22,7 +22,9 @@ pub fn typescript_error(_meta: TokenStream, input: TokenStream) -> TokenStream {
             .collect(),
         Fields::Unit => vec![],
         Fields::Unnamed { .. } => {
-            abort_call_site!("#[derive(TypescriptError)] can only be used for structs with named fields")
+            abort_call_site!(
+                "#[derive(TypescriptError)] can only be used for structs with named fields"
+            )
         }
     };
 
@@ -32,8 +34,10 @@ pub fn typescript_error(_meta: TokenStream, input: TokenStream) -> TokenStream {
     let javascript = typescript_error_definition(&ident, &typescript_fields);
     let javascript_literal = LitStr::new(&javascript, Span::call_site());
 
-    let rust_constructor_params = fields.iter().map(|Field { ident, ty, .. }| quote! {
-        #ident: #ty
+    let rust_constructor_params = fields.iter().map(|Field { ident, ty, .. }| {
+        quote! {
+            #ident: #ty
+        }
     });
 
     let output = quote! {

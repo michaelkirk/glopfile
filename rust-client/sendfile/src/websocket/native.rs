@@ -99,9 +99,7 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
         self.outgoing_message_tx
             .send((tungstenite::Message::Binary(encoded), reply_tx))
             .map_err(|_| self.join().unwrap_err())?;
-        reply_rx
-            .await
-            .map_err(|_| self.join().unwrap_err())?;
+        reply_rx.await.map_err(|_| self.join().unwrap_err())?;
         Ok(())
     }
 }

@@ -5,15 +5,15 @@
     clippy::let_and_return,
     clippy::redundant_pattern_matching,
     clippy::len_without_is_empty,
-    clippy::useless_format,
+    clippy::useless_format
 )]
 
 use std::io::Write;
-use std::{iter, io, mem};
 use std::panic::resume_unwind;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
+use std::{io, iter, mem};
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
@@ -129,8 +129,7 @@ impl Cli {
         let provisioned_file = send_client.provision_file(path)?;
         provision_spinner.finish_and_clear();
 
-        let formatted_download_url_and_key =
-            provisioned_file.formatted_download_url_and_key();
+        let formatted_download_url_and_key = provisioned_file.formatted_download_url_and_key();
 
         let file_name = &path
             .file_name()
@@ -149,8 +148,9 @@ impl Cli {
                 .with_style(upload_progress_bar_style),
         );
 
-        let finish_spinner = multi_progress
-            .add(ProgressBar::new_spinner().with_message(format!("Waiting for downloader to finish...")));
+        let finish_spinner = multi_progress.add(
+            ProgressBar::new_spinner().with_message(format!("Waiting for downloader to finish...")),
+        );
 
         let (progress_tx, progress_rx) = mpsc::channel();
         crossbeam::scope(|scope| {

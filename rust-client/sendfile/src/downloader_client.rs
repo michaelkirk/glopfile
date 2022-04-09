@@ -24,7 +24,7 @@ use crate::p2p::protocol::{
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
 use crate::util::{Progress, ProgressState};
 use crate::websocket::web_socket_message;
-use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport, mpsc};
+use crate::{mpsc, ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
 pub struct DownloaderClient {
     api_client: ApiClient,
@@ -75,17 +75,28 @@ impl DownloaderClient {
         Progress::new_with(|progress_tx| async move {
             match self.transport {
                 Transport::Both => match self
-                    .download_p2p_async(meta, decrypted_file.clone(), p2p_timeout, progress_tx.clone())
+                    .download_p2p_async(
+                        meta,
+                        decrypted_file.clone(),
+                        p2p_timeout,
+                        progress_tx.clone(),
+                    )
                     .await
                 {
-                    Err(Error::Timeout) => self.download_relayed_async(meta, decrypted_file, progress_tx).await,
+                    Err(Error::Timeout) => {
+                        self.download_relayed_async(meta, decrypted_file, progress_tx)
+                            .await
+                    }
                     result => result,
                 },
                 Transport::P2P => {
                     self.download_p2p_async(meta, decrypted_file, p2p_timeout, progress_tx)
                         .await
                 }
-                Transport::Relay => self.download_relayed_async(meta, decrypted_file, progress_tx).await,
+                Transport::Relay => {
+                    self.download_relayed_async(meta, decrypted_file, progress_tx)
+                        .await
+                }
             }
         })
     }
@@ -224,10 +235,9 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
                     decrypted_file.write_all(&new_data).await?;
                     *offset += len;
                     *inflight_data_request = false;
-                    let _ignore = self.progress_tx.send(ProgressState {
-                        current: *offset,
-                        total: self.len,
-                    });
+                    let _ignore = self
+                        .progress_tx
+                        .send(ProgressState { current: *offset, total: self.len });
                 } else {
                     warn!("received RTC DataResponse from uploader for unexpected offset {offset} len {len}");
                 }

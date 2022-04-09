@@ -2,12 +2,12 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures::{AsyncRead, pin_mut, TryStreamExt};
+use futures::{pin_mut, AsyncRead, TryStreamExt};
 use tokio::fs::File;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use super::{ProvisionedFile, UploadableFile, UploaderClient};
-use crate::{Error, Result, ProgressState};
+use crate::{Error, ProgressState, Result};
 
 pub struct NativeUploadFile {
     file: tokio_util::compat::Compat<File>,

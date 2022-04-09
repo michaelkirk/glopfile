@@ -74,8 +74,8 @@ impl CipherKey {
     }
 
     pub fn from_string(url_safe_base64: &str) -> Result<Self> {
-        let bytes = url_safe_base64::decode(url_safe_base64)
-            .map_err(|_| Error::InvalidCipherKey)?;
+        let bytes =
+            url_safe_base64::decode(url_safe_base64).map_err(|_| Error::InvalidCipherKey)?;
 
         let byte_array: [u8; KEY_SIZE] = bytes.try_into().map_err(|_| Error::InvalidCipherKey)?;
 

@@ -7,8 +7,8 @@ use std::{io, mem};
 
 use bytes::Bytes;
 use futures::{
-    ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt,
-    StreamExt, TryStreamExt,
+    ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt, StreamExt,
+    TryStreamExt,
 };
 use reqwest::{header, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -76,7 +76,11 @@ impl ApiClient {
         Ok(provision_file_response)
     }
 
-    pub async fn encrypt_file<F: AsyncRead + Unpin>(&self, file: F, file_size: u64) -> io::Result<EncryptedFile> {
+    pub async fn encrypt_file<F: AsyncRead + Unpin>(
+        &self,
+        file: F,
+        file_size: u64,
+    ) -> io::Result<EncryptedFile> {
         let plaintext_len = file_size.try_into().expect("file fits in memory");
         let plaintext = ContentCipherBuffer::read_plaintext_to_end(file, plaintext_len).await?;
         // TODO - verify length matches that in metadata
@@ -87,11 +91,7 @@ impl ApiClient {
         Ok(EncryptedFile { encrypted_bytes: encrypted_bytes.into() })
     }
 
-    pub async fn upload_file(
-        &self,
-        file: EncryptedFile,
-        upload_path: &str,
-    ) -> Result<()> {
+    pub async fn upload_file(&self, file: EncryptedFile, upload_path: &str) -> Result<()> {
         let url = self.endpoint.join(upload_path).expect("bad endpoint?");
         let file_size = file.encrypted_bytes.len();
         let last_position = file_size - 1;
@@ -118,7 +118,10 @@ impl ApiClient {
             let response = client
                 .post(url.clone())
                 .body(send_bytes)
-                .header(header::CONTENT_RANGE, format!("bytes {position}-{last_position}/{file_size}"))
+                .header(
+                    header::CONTENT_RANGE,
+                    format!("bytes {position}-{last_position}/{file_size}"),
+                )
                 .send()
                 .await?;
 
