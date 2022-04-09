@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [ubuntu18, macos, windows]
+        platform: [ubuntu18, macos]
         include:
           - platform: ubuntu18
             os:       ubuntu-18.04
@@ -29,11 +29,6 @@ jobs:
             os:       macos-latest
             target:   x86_64-apple-darwin
             experimental: false
-
-          - platform: windows
-            os:       windows-2019
-            target:   x86_64-pc-windows-msvc
-            experimental: true
     steps:
       - name: checkout
         uses: actions/checkout@v2
