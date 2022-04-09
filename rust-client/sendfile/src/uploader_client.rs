@@ -39,9 +39,16 @@ impl UploaderClient {
         Self { api_client, download_endpoint, transport }
     }
 
+    #[cfg(test)]
     pub fn new_testing() -> Self {
-        let api_endpoint = Url::parse("http://localhost:8080").expect("invalid hardcoded url");
-        let download_endpoint = Url::parse("http://localhost:3000").expect("invalid hardcoded url");
+        let api_endpoint = option_env!("TEST_SENDFILE_API_ENDPOINT")
+            .unwrap_or("http://localhost:8080")
+            .parse()
+            .expect("invalid TEST_SENDFILE_API_ENDPOINT");
+        let download_endpoint = option_env!("TEST_SENDFILE_DOWNLOAD_ENDPOINT")
+            .unwrap_or("http://localhost:3000")
+            .parse()
+            .expect("invalid hardcoded url");
         Self::new(api_endpoint, download_endpoint, Transport::Both)
     }
 
@@ -88,7 +95,10 @@ impl UploaderClient {
         Progress::new_with(|progress_tx| async move {
             let file = provisioned_file.file;
             pin_mut!(file);
-            let encrypted_file = self.api_client.encrypt_file(file, provisioned_file.file_size).await?;
+            let encrypted_file = self
+                .api_client
+                .encrypt_file(file, provisioned_file.file_size)
+                .await?;
             let encrypted_file_len = encrypted_file.len();
 
             // Send a progress update to signal that we're done with encryption and about to start the upload.
@@ -120,16 +130,17 @@ impl UploaderClient {
                         .api_client
                         .connect_upload_websocket(upload_path, move |message| {
                             match message.inner {
-                                Some(web_socket_message::Inner::RtcSignaling(message)) =>
-                                    debug!("ignoring received RTC signaling message: {message:?}"),
-                                Some(web_socket_message::Inner::UploadDataAck(ack)) =>
+                                Some(web_socket_message::Inner::RtcSignaling(message)) => {
+                                    debug!("ignoring received RTC signaling message: {message:?}")
+                                }
+                                Some(web_socket_message::Inner::UploadDataAck(ack)) => {
                                     drop(progress_tx.send(ProgressState {
                                         current: ack.offset,
                                         total: encrypted_file_len,
-                                    })),
+                                    }))
+                                }
                                 // Unfortunately, with prost there's no way to log about what message type this actually was.
-                                None =>
-                                    warn!("unhandled websocket message type"),
+                                None => warn!("unhandled websocket message type"),
                             }
                             Continue(())
                         })
@@ -159,10 +170,8 @@ impl UploaderClient {
                             .unwrap_or(Break(()))
                     }
                     Some(web_socket_message::Inner::UploadDataAck(ack)) => {
-                        let _ignore = progress_tx.send(ProgressState {
-                            current: ack.offset,
-                            total: encrypted_file_len,
-                        });
+                        let _ignore = progress_tx
+                            .send(ProgressState { current: ack.offset, total: encrypted_file_len });
                         Continue(())
                     }
                     None => {
@@ -234,10 +243,8 @@ impl PeerToPeerClientHandler for UploadState {
                 client.send_uploader_message(uploader_message::Inner::DataResponse(
                     DataResponse { data, offset },
                 ))?;
-                let _ = progress_tx.send(ProgressState {
-                    current: new_offset,
-                    total: encrypted_file.len(),
-                });
+                let _ = progress_tx
+                    .send(ProgressState { current: new_offset, total: encrypted_file.len() });
                 Ok(Continue(()))
             }
             Some(downloader_message::Inner::TransferFinished(TransferFinished {})) => {

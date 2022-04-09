@@ -47,9 +47,13 @@ impl DownloaderClient {
         let api_client = ApiClient::new(api_endpoint, cipher_key);
         Ok(Self { api_client, download_id, output_dir: None, transport })
     }
+
     #[cfg(test)]
     pub fn from_testing_download_url(download_url_str: &str, transport: Transport) -> Result<Self> {
-        let api_endpoint = Url::parse("http://localhost:8080").expect("invalid hardcoded url");
+        let api_endpoint = option_env!("TEST_SENDFILE_API_ENDPOINT")
+            .unwrap_or("http://localhost:8080")
+            .parse()
+            .expect("invalid hardcoded url");
         Self::from_download_url(download_url_str, api_endpoint, transport)
     }
 
