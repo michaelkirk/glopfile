@@ -1,2 +1,13 @@
 [workspace]
 members = ["cli", "macros", "sendfile"]
+
+# Only use the strip option for sendfile-cli, since it is only stable since Cargo 1.59.0, and Cargo before that will
+# then fail to compile _any_ of our workspace packages with any profile if we specify it globally.
+[profile.distribution.package.sendfile-cli]
+strip = true
+
+[profile.distribution]
+inherits = "release"
+opt-level = "s"
+codegen-units = 1
+lto = true

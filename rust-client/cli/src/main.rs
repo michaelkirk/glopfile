@@ -105,12 +105,16 @@ impl Cli {
         no_p2p: bool,
         no_relay: bool,
     ) -> Result<()> {
-        let default_api_endpoint =
-            Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
+        let default_api_endpoint = option_env!("SENDFILE_API_ENDPOINT")
+            .unwrap_or("http://localhost:8080")
+            .parse()
+            .expect("invalid hardcoded url");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
-        let default_download_endpoint =
-            Url::parse("http://localhost:3000").expect("invalid hardcoded endpoint");
+        let default_download_endpoint = option_env!("SENDFILE_DOWNLOAD_ENDPOINT")
+            .unwrap_or("http://localhost:3000")
+            .parse()
+            .expect("invalid hardcoded url");
         let download_endpoint = download_endpoint
             .unwrap_or(&default_download_endpoint)
             .clone();

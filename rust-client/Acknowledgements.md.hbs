@@ -1,0 +1,26 @@
+# Third Party Licenses
+
+This page lists the licenses of the Rust crates used by this project.
+
+## Overview of licenses
+
+{{#each overview}}
+- {{{name}}} ({{{count}}} crates)
+{{/each}}
+
+## License texts
+
+{{#each licenses}}
+### {{{name}}}
+
+Used by:
+
+{{#each used_by}}
+- [{{{crate.name}}} {{{crate.version}}}]({{#if crate.repository}}{{{crate.repository}}}{{else}}https://crates.io/crates/{{{crate.name}}}{{/if}})
+{{/each}}
+
+```
+{{{text}}}
+```
+
+{{/each}}
