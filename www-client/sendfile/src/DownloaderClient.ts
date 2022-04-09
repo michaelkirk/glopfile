@@ -25,11 +25,12 @@ export class DownloaderClient {
 
   async downloadContent(
     meta: DownloadMeta,
+    timeout: number | undefined,
     progressHandler: (completed: number, total: number) => void,
   ): Promise<DownloadFile> {
     let file = new DownloadFile();
     let state = new DownloadState(progressHandler);
-    await this.inner!.download(meta, file, undefined, state);
+    await this.inner!.download(meta, file, timeout, state);
     return file;
   }
 

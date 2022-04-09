@@ -1,6 +1,8 @@
 import React from "react";
 import { DownloaderClient, DownloadMeta, HTTPErrorResponseError, errorName } from "sendfile";
 
+const P2P_INACTIVITY_TIMEOUT: number = 5.0;
+
 class DownloaderState {
   downloaderClient?: Promise<DownloaderClient>;
   downloadMeta?: DownloadMeta;
@@ -202,6 +204,7 @@ class Downloader extends React.Component<DownloaderProps, DownloaderState> {
     const downloaderClient = await this.state.downloaderClient!;
     let file = await downloaderClient.downloadContent(
       downloadMeta,
+      P2P_INACTIVITY_TIMEOUT,
       (completed: number, total: number): void => {
         this.setState({ progress: new Progress(completed, total) });
       }
