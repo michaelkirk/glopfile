@@ -9,8 +9,9 @@ server {
     }
 
     gzip             on;
+    gzip_static      on;
     gzip_comp_level  3;
-    gzip_types       text/plain text/css application/javascript image/*;
+    gzip_types       text/plain text/css application/javascript image/* application/wasm;
 
     listen [::]:443 ssl; # managed by Certbot
     listen 443 ssl; # managed by Certbot
