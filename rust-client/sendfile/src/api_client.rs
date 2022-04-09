@@ -102,7 +102,9 @@ impl ApiClient {
             if #[cfg(not(target_arch = "wasm32"))] {
                 client_builder = client_builder.timeout(CONTENT_TIMEOUT);
             } else {
-                client_builder = client_builder;
+                #[allow(clippy::self_assignment)] {
+                    client_builder = client_builder;
+                }
             }
         }
 
@@ -176,7 +178,7 @@ impl ApiClient {
         debug!("download_response: {:?}", download_response);
         let decoded_metadata: Vec<u8> = base64::decode(&download_response.meta)
             .map_err(|_| Error::InvalidInput("invalid base64 encoding of metadata"))?;
-        let decrypted_metadata = self.cipher().decrypt(decoded_metadata.into()).await?;
+        let decrypted_metadata = self.cipher().decrypt(decoded_metadata).await?;
         let file_meta = FileMeta::try_from_encoded(&decrypted_metadata)?;
         Ok(DownloadMeta {
             encrypted_content_url: download_response.encrypted_content_url,
@@ -222,7 +224,9 @@ impl ApiClient {
             if #[cfg(not(target_arch = "wasm32"))] {
                 client_builder = client_builder.timeout(CONTENT_TIMEOUT);
             } else {
-                client_builder = client_builder;
+                #[allow(clippy::self_assignment)] {
+                    client_builder = client_builder;
+                }
             }
         }
 
@@ -371,7 +375,7 @@ impl std::fmt::Display for DownloadId {
 impl DownloadId {
     pub fn new(id: String) -> Self {
         assert!(
-            !id.contains("/"),
+            !id.contains('/'),
             "'id' looks like a path: {}. Improperly parsed?",
             id
         );
@@ -512,7 +516,7 @@ impl AsyncWrite for DecryptedFile<'_> {
                     let cipher = self.api_client.cipher();
                     Box::pin(async move {
                         let plaintext = cipher
-                            .decrypt(data.into())
+                            .decrypt(data)
                             .await
                             .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
 

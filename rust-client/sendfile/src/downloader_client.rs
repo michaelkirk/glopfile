@@ -98,7 +98,7 @@ impl DownloaderClient {
     ) -> Result<()> {
         let result = self
             .api_client
-            .download_content(&meta, decrypted_file, progress_tx)
+            .download_content(meta, decrypted_file, progress_tx)
             .await?;
         info!("successfully completed relayed file transfer");
         Ok(result)
@@ -148,7 +148,7 @@ impl DownloaderClient {
         p2p_client.transfer(&mut state, timeout).await?;
 
         info!("successfully completed p2p file transfer");
-        self.api_client.finish_download(&meta).await?;
+        self.api_client.finish_download(meta).await?;
         Ok(())
     }
 
@@ -177,7 +177,7 @@ impl DownloaderClient {
                 Error::InvalidInput("Invalid download url")
             })?;
 
-            if download_id_str.contains("/") {
+            if download_id_str.contains('/') {
                 error!("invalid download_id containing '/': {}", download_path);
                 return Err(Error::InvalidInput("Invalid download url"));
             }

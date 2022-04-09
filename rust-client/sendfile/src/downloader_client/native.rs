@@ -35,8 +35,8 @@ impl DownloaderClient {
             .build()?
             .block_on(async {
                 let file = DownloadFile::new(meta, self.output_dir.as_deref()).await?;
-                let decrypted_file = self.api_client.decrypt_file(&meta, file);
-                let download_progress = self.download_async(&meta, decrypted_file, p2p_timeout);
+                let decrypted_file = self.api_client.decrypt_file(meta, file);
+                let download_progress = self.download_async(meta, decrypted_file, p2p_timeout);
                 pin_mut!(download_progress);
                 while let Some(progress_state) = download_progress.try_next().await? {
                     progress_fun(progress_state);

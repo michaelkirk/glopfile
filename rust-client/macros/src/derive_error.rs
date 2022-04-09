@@ -13,8 +13,7 @@ impl TypescriptErrorField {
         let typescript_type_attr = field
             .attrs
             .iter()
-            .filter(|attr| attr.path.is_ident("typescript_type"))
-            .next()?;
+            .find(|attr| attr.path.is_ident("typescript_type"))?;
         let ty = match typescript_type_attr.parse_meta().unwrap() {
             Meta::NameValue(MetaNameValue { lit: Lit::Str(lit_str), .. }) => lit_str.value(),
             _ => abort_call_site!("Usage: #[typescript_type = \"...\"]"),
@@ -31,7 +30,6 @@ pub fn typescript_error_declaration<'a>(
     let mut out = String::new();
 
     let field_specs = fields
-        .clone()
         .into_iter()
         .map(|TypescriptErrorField { name, ty }| format!("{name}: {ty}"))
         .collect::<Vec<_>>();

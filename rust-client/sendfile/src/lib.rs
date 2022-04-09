@@ -1,3 +1,13 @@
+#![allow(
+    clippy::drop_copy,
+    clippy::unused_unit,
+    clippy::comparison_chain,
+    clippy::let_and_return,
+    clippy::redundant_pattern_matching,
+    clippy::len_without_is_empty,
+    clippy::useless_format,
+)]
+
 #[macro_use]
 extern crate log;
 

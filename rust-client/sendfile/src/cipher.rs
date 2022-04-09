@@ -205,7 +205,7 @@ mod buffer {
 
         #[cfg_attr(not(target_arch = "wasm32"), allow(unused))]
         pub(super) fn ciphertext_mut(&mut self) -> &mut [u8] {
-            &mut self.payload_and_tag
+            self.payload_and_tag
         }
 
         pub(super) fn ciphertext_parts_mut(&mut self) -> ContentCipherBufferCiphertextPartsMut<'_> {

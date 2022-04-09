@@ -125,10 +125,7 @@ impl WebUploaderClient {
             pin_mut!(upload_progress);
             while let Some(progress_state) = upload_progress.try_next().await? {
                 if let Some(event_handler) = &event_handler {
-                    event_handler.upload_progress(
-                        progress_state.current.into(),
-                        progress_state.total.into(),
-                    )?;
+                    event_handler.upload_progress(progress_state.current, progress_state.total)?;
                 }
             }
             Ok(JsValue::UNDEFINED)

@@ -70,7 +70,7 @@ mod tests {
         let ciphertext = cipher.encrypt(ContentCipherBuffer::from_plaintext(plaintext)).await;
         assert_eq!(
             plaintext.to_vec(),
-            cipher.decrypt(ciphertext.into()).await.unwrap()
+            cipher.decrypt(ciphertext).await.unwrap()
         );
     }
 
@@ -80,7 +80,7 @@ mod tests {
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
         let mut ciphertext = cipher.encrypt(ContentCipherBuffer::from_plaintext(plaintext)).await;
-        ciphertext[0] = ciphertext[0] + 1;
-        assert!(cipher.decrypt(ciphertext.into()).await.is_err());
+        ciphertext[0] += 1;
+        assert!(cipher.decrypt(ciphertext).await.is_err());
     }
 }

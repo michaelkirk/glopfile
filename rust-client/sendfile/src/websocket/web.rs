@@ -115,7 +115,7 @@ impl super::WebSocketConnection for WebWebSocketConnection {
 
         callbacks.add_event(websocket.clone(), WebSocket::set_onerror, {
             let shared = Rc::clone(&shared);
-            move |event: ErrorEvent| shared.catch(|| Err(event.error())?)
+            move |event: ErrorEvent| shared.catch(|| Err(event.error().into()))
         });
 
         drop(init_callbacks);

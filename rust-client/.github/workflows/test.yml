@@ -26,6 +26,9 @@ jobs:
           TEST_SENDFILE_DOWNLOAD_ENDPOINT=${{ secrets.TEST_SENDFILE_DOWNLOAD_ENDPOINT }} \
           cargo test --verbose
 
+      - name: cargo clippy
+        run:  cargo clippy
+
   build-web:
     name: build-web
     runs-on: ubuntu-latest
@@ -46,3 +49,6 @@ jobs:
 
       - name: cargo build
         run:  cargo build --verbose --lib --target wasm32-unknown-unknown
+
+      - name: cargo clippy
+        run:  cargo clippy --lib --target wasm32-unknown-unknown

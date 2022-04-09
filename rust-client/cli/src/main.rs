@@ -1,3 +1,13 @@
+#![allow(
+    clippy::drop_copy,
+    clippy::unused_unit,
+    clippy::comparison_chain,
+    clippy::let_and_return,
+    clippy::redundant_pattern_matching,
+    clippy::len_without_is_empty,
+    clippy::useless_format,
+)]
+
 use std::io::Write;
 use std::{iter, io, mem};
 use std::panic::resume_unwind;
@@ -106,7 +116,7 @@ impl Cli {
             .clone();
 
         let transport = Transport::with_p2p_and_relay(!no_p2p, !no_relay)
-            .ok_or(anyhow!("cannot disable both p2p and relay"))?;
+            .ok_or_else(|| anyhow!("cannot disable both p2p and relay"))?;
 
         let send_client = UploaderClient::new(api_endpoint, download_endpoint, transport);
 
@@ -184,7 +194,7 @@ impl Cli {
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
         let transport = Transport::with_p2p_and_relay(!no_p2p, !no_relay)
-            .ok_or(anyhow!("cannot disable both p2p and relay"))?;
+            .ok_or_else(|| anyhow!("cannot disable both p2p and relay"))?;
 
         let downloader_client =
             DownloaderClient::from_download_url(download_url, api_endpoint, transport)?;

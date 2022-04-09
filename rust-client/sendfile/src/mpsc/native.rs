@@ -23,7 +23,7 @@ impl<T: Send> super::ChannelReceive<T> for Receiver<T> {
     }
 
     async fn recv_timeout(&mut self, timeout: instant::Duration) -> Result<T, RecvTimeoutError> {
-        let result = tokio::time::timeout(timeout.into(), self.next()).await;
+        let result = tokio::time::timeout(timeout, self.next()).await;
         let result = result.map_err(|tokio::time::error::Elapsed { .. }| RecvTimeoutError::Timeout)?;
         result.ok_or(RecvTimeoutError::Disconnected)
     }

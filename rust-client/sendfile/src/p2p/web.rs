@@ -42,7 +42,7 @@ impl WebRtcPeerConnection {
     ) -> Result<(), Error> {
         debug!(
             "new RTC local session description: {local_description_init:?}",
-            local_description_init = JSON::stringify(&local_description_init),
+            local_description_init = JSON::stringify(local_description_init),
         );
 
         JsFuture::from(self.rtc.set_local_description(local_description_init))
@@ -73,8 +73,7 @@ impl super::Rtc for WebRtc {
     ) -> Result<Self::PeerConnection, Error> {
         let mut callbacks = Callbacks::default();
 
-        let stun_servers = stun_servers.into_iter();
-        let stun_servers = stun_servers.map(|url| {
+        let stun_servers = stun_servers.iter().map(|url| {
             let mut stun_server = RtcIceServer::new();
             stun_server.urls(&JsString::from(*url));
             stun_server
@@ -209,7 +208,6 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
         });
 
         callbacks.add_event(rtc.clone(), RtcDataChannel::set_onmessage, {
-            let tx = tx.clone();
             move |event: MessageEvent| {
                 let msg_buffer = event
                     .data()

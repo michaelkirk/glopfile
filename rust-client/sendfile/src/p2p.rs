@@ -230,8 +230,7 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                     event: PeerConnectionEvent::DataChannelError(error), ..
                 } => {
                     warn!("RTC data channel error: {error}");
-                    let source = error.into();
-                    return Err(Error::RTCDataChannel { source });
+                    return Err(Error::RTCDataChannel { source: error });
                 }
 
                 Event::Connection {
