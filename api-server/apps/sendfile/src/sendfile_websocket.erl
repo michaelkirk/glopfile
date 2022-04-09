@@ -11,6 +11,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(FRAME_SIZE_MAX, 102400).
+-define(PING_INTERVAL, 5000).
+-define(IDLE_TIMEOUT, 30000).
 
 -record(session,
        {pid :: pid(),
@@ -20,7 +22,8 @@
 -record(state,
         {websocket_pid :: pid() | undefined,
          direction :: direction(),
-         session :: session()}).
+         session :: session(),
+         ping :: {waiting, reference()} | sent}).
 
 -type direction() :: upload | download.
 -record(start_opts,
@@ -51,7 +54,8 @@ start_opts(Id, SessionPid, Direction) ->
 
 -spec websocket_opts() -> cowboy_websocket:opts().
 websocket_opts() ->
-    #{max_frame_size => ?FRAME_SIZE_MAX}.
+    #{max_frame_size => ?FRAME_SIZE_MAX,
+      idle_timeout => ?IDLE_TIMEOUT}.
 
 -spec recv(pid(), Message :: cow_ws:frame()) -> {ok, cowboy_websocket:commands()}.
 recv(Pid, Message) ->
@@ -77,7 +81,8 @@ init({WebsocketPid, StartOpts}) ->
     process_flag(trap_exit, true),
     SessionMonitor = monitor(process, SessionPid),
     Session = #session{pid = SessionPid, monitor = SessionMonitor},
-    {ok, #state{websocket_pid = WebsocketPid, direction = Direction, session = Session}}.
+    State = #state{websocket_pid = WebsocketPid, direction = Direction, session = Session, ping = sent},
+    {ok, reset_ping_timer(State)}.
 
 handle_call(#recv_call{message = Message}, From, State) ->
     handle_recv(Message, From, State);
@@ -103,6 +108,9 @@ handle_info({'EXIT', WebsocketPid, _Reason}, #state{websocket_pid = WebsocketPid
 handle_info({'EXIT', SessionPid, _Reason}, #state{session = #session{pid = SessionPid}} = State) ->
     {stop, session_died, State};
 
+handle_info({timeout, TimerRef, {?MODULE, ping}}, State) ->
+    handle_ping_timeout(TimerRef, State);
+
 handle_info(Message, State) ->
     ?LOG_WARNING("unknown message: ~p", [Message]),
     {noreply, State}.
@@ -120,13 +128,13 @@ terminate(Reason, State) ->
 %%
 
 handle_recv(ping, _From, State) ->
-    {reply, {ok, [pong]}, State};
-handle_recv({ping, _}, _From, State) ->
-    {reply, {ok, [pong]}, State};
+    {reply, {ok, [pong]}, reset_ping_timer(State)};
+handle_recv({ping, Payload}, _From, State) ->
+    {reply, {ok, [{pong, Payload}]}, reset_ping_timer(State)};
 handle_recv(pong, _From, State) ->
-    {reply, {ok, []}, State};
+    {reply, {ok, []}, reset_ping_timer(State)};
 handle_recv({pong, _}, _From, State) ->
-    {reply, {ok, []}, State};
+    {reply, {ok, []}, reset_ping_timer(State)};
 handle_recv(close, _From, State) ->
     ?LOG_DEBUG("websocket ~s closed", []),
     {stop, normal, State};
@@ -134,9 +142,9 @@ handle_recv({close, Code, Reason}, _From, State) ->
     ?LOG_DEBUG("websocket ~s closed for reason ~b: ~s", [Code, Reason]),
     {stop, normal, State};
 handle_recv({text, Data}, From, State) ->
-    handle_recv_data({text, Data}, From, State);
+    handle_recv_data({text, Data}, From, reset_ping_timer(State));
 handle_recv({binary, Data}, From, State) ->
-    handle_recv_data({binary, Data}, From, State);
+    handle_recv_data({binary, Data}, From, reset_ping_timer(State));
 handle_recv(Message, _From, State) ->
     ?LOG_WARNING("unknown websocket message: ~p", [Message]),
     {reply, {ok, []}, State}.
@@ -148,3 +156,20 @@ handle_recv_data(Frame, _From, State) ->
 handle_send(Frames, State) ->
     sendfile_api_handler:websocket_send(State#state.websocket_pid, Frames),
     {noreply, State}.
+
+%% message from the active timer
+handle_ping_timeout(WaitTimerRef, #state{ping = {waiting, WaitTimerRef}}=State) ->
+    sendfile_api_handler:websocket_send(State#state.websocket_pid, [ping]),
+    {noreply, State#state{ping = sent}};
+
+%% message from a cancelled timer, which can appear after a race with erlang:cancel_timer
+handle_ping_timeout(_OldTimerRef, State) ->
+    {noreply, State}.
+
+reset_ping_timer(State) ->
+    case State#state.ping of
+        {waiting, OldTimerRef} -> erlang:cancel_timer(OldTimerRef);
+        sent -> ok
+    end,
+    TimerRef = erlang:start_timer(?PING_INTERVAL, self(), {?MODULE, ping}),
+    State#state{ping = {waiting, TimerRef}}.
