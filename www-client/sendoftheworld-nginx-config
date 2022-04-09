@@ -1,7 +1,10 @@
 server {
     server_name    s.endoftheworl.de;
-    root           /var/www/s.endoftheworl.de;
+    root           /var/www/s.endoftheworl.de/current;
     index          index.html;
+
+    # deploy utilizes symlink for easy rollback
+    disable_symlinks off;
 
     include mime.types;
     types {
