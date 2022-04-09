@@ -1,5 +1,5 @@
 import React from "react";
-import { SenderClient } from "sendfile";
+import { UploaderClient } from "sendfile";
 
 import FilePicker from "./FilePicker";
 import FileUploader from "./FileUploader";
@@ -12,18 +12,22 @@ class UploaderProps {
   }
 }
 class UploaderState {
-  senderClient: Promise<SenderClient>;
+  uploaderClient: Promise<UploaderClient>;
   fileUpload?: FileUpload;
-  constructor(senderClient: Promise<SenderClient>) {
-    this.senderClient = senderClient;
+  constructor(uploaderClient: Promise<UploaderClient>) {
+    this.uploaderClient = uploaderClient;
   }
 }
 
 class Uploader extends React.Component<UploaderProps, UploaderState> {
   constructor(props: UploaderProps) {
     super(props);
-    const senderClient = SenderClient.build(props.apiEndpoint);
-    this.state = new UploaderState(senderClient);
+    const uploaderClient = UploaderClient.build(props.apiEndpoint);
+    this.state = new UploaderState(uploaderClient);
+  }
+
+  componentWillUnmount() {
+    this.state.uploaderClient.then(uploaderClient => uploaderClient.free())
   }
 
   render(): React.ReactNode {
@@ -46,22 +50,41 @@ class Uploader extends React.Component<UploaderProps, UploaderState> {
   }
 
   async addFile(file: File): Promise<void> {
-    let senderClient = await this.state.senderClient!;
-    const provisionedFile = await senderClient.provisionFile(file);
+    let uploaderClient = await this.state.uploaderClient!;
+    const provisionedFile = await uploaderClient.provisionFile(file);
 
-    const fileName = file.name;
-    const fileSize = file.size;
-    const downloadURLWithCipherKey =
-      await provisionedFile.downloadURLWithCipherKey();
+    try {
+      const fileName = file.name;
+      const fileSize = file.size;
+      const downloadURLWithCipherKey =
+        provisionedFile.downloadURLWithCipherKey();
 
-    const fileUpload = new FileUpload(
-      fileName,
-      fileSize,
-      downloadURLWithCipherKey
-    );
-    this.setState({ fileUpload });
+      const fileUpload = new FileUpload(
+        fileName,
+        fileSize,
+        downloadURLWithCipherKey
+      );
+      this.setState({ fileUpload });
 
-    await senderClient.uploadProvisionedFile(provisionedFile);
+      await uploaderClient.uploadProvisionedFile(
+        provisionedFile,
+        (completed: number, total: number): void => {
+          let fileUpload = this.state.fileUpload!;
+          const progressedFileUpload = Object.assign({}, fileUpload);
+          progressedFileUpload.progressRatio = completed / total;
+          this.setState({ fileUpload: progressedFileUpload });
+        }
+      );
+    } finally {
+      provisionedFile.free();
+    }
+
+    (() => {
+      let fileUpload = this.state.fileUpload!;
+      const completedFileUpload = Object.assign({}, fileUpload);
+      completedFileUpload.isComplete = true;
+      this.setState({ fileUpload: completedFileUpload });
+    })();
   }
 }
 

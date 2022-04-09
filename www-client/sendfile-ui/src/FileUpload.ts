@@ -1,7 +1,8 @@
 class FileUpload {
   fileName: string;
   fileSize: number;
-  uploadByteCount = 0;
+  isComplete: boolean;
+  progressRatio = 0;
   downloadURLWithCipherKey: URL;
 
   constructor(
@@ -12,6 +13,7 @@ class FileUpload {
     this.fileName = fileName;
     this.fileSize = fileSize;
     this.downloadURLWithCipherKey = downloadURLWithCipherKey;
+    this.isComplete = false;
   }
 }
 

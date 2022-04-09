@@ -6,8 +6,10 @@
 
 ### Install dependencies and compile the TypeScript library
 
-    (cd sendfile-ui && yarn install)
+    cargo install wasm-pack
+    wasm-pack build rust
     (cd sendfile && yarn install && yarn tsc)
+    (cd sendfile-ui && yarn install)
 
 ### Link to local sendfile
 

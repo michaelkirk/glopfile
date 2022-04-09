@@ -11,22 +11,57 @@ class FileUploaderProps {
 
 class FileUploader extends React.Component<FileUploaderProps, {}> {
   render() {
+    let body;
+
+    if (this.props.fileUpload.isComplete) {
+      body = (
+        <div>
+          <p>
+            <b>🎉 Done!</b> You can close this window.
+          </p>
+          <p>
+            <a href="/">send another file</a>
+          </p>
+        </div>
+      );
+    } else {
+      body = (
+        <div>
+          <p>Send this download link to the recipient to continue uploading.</p>
+          <p>
+            {this.downloadURLWithCipherKey()}
+            <br />[
+            <a
+              href="#copy"
+              onClick={(_) => {
+                this.copyToClipboard(this.downloadURLWithCipherKey());
+                toast.success("Link copied!");
+              }}
+            >
+              Copy
+            </a>
+            ]
+            <Toaster containerStyle={{ position: "relative" }} />
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="FileUploader">
-        <p>Uploading file: {this.fileName()}</p>
-        <p>Send this download link to the recipient.</p>
-        <p>
-          {this.downloadURLWithCipherKey()}
-          <br />[
-          <a
-            href="#copy"
-            onClick={(_) => { this.copyToClipboard(this.downloadURLWithCipherKey()); toast.success("Link copied!"); }}
-          >
-            Copy
-          </a>
-          ]
-          <Toaster containerStyle={{ position: 'relative' }} />
-        </p>
+        <table>
+          <tbody>
+            <tr>
+              <th>file</th>
+              <td>{this.fileName()}</td>
+            </tr>
+            <tr>
+              <th>uploaded</th>
+              <td>{this.uploadProgress()}</td>
+            </tr>
+          </tbody>
+        </table>
+        {body}
       </div>
     );
   }
@@ -37,6 +72,12 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
 
   fileName(): string {
     return this.props.fileUpload.fileName;
+  }
+
+  uploadProgress(): string {
+    const fileUpload = this.props.fileUpload;
+    const percent = 100.0 * fileUpload.progressRatio;
+    return `${percent.toFixed(1)}%`;
   }
 
   downloadURLWithCipherKey(): string {
