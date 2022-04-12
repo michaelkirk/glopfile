@@ -34,7 +34,8 @@ pub struct DownloaderClient {
     transport: Transport,
 }
 
-const CHUNK_SIZE: u64 = 16384;
+const CHUNK_SIZE: u64 = 16 * 1024;
+const MAX_P2P_INFLIGHT_DATA_LEN: u64 = 10 * 1024 * 1024;
 
 impl DownloaderClient {
     pub fn from_download_url(
@@ -147,11 +148,10 @@ impl DownloaderClient {
             })
             .await?;
         let mut state = DownloadState {
-            inflight_data_request: false,
             decrypted_file,
             progress_tx,
-            offset: 0,
-            len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
+            requested_offset: 0,
+            total_len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
         };
 
         p2p_client.set_websocket(websocket).await?;
@@ -201,10 +201,9 @@ impl DownloaderClient {
 }
 
 struct DownloadState<'a> {
-    inflight_data_request: bool,
     decrypted_file: DecryptedFile<'a>,
-    offset: u64,
-    len: u64,
+    requested_offset: u64,
+    total_len: u64,
     progress_tx: mpsc::Sender<ProgressState<u64>>,
 }
 
@@ -222,22 +221,19 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
         client: &mut PeerToPeerClient,
         message_data: Bytes,
     ) -> Result<ControlFlow<()>> {
-        let Self { inflight_data_request, decrypted_file, offset, .. } = self;
+        let Self { decrypted_file, .. } = self;
         let message = UploaderMessage::decode(message_data).map_err(Error::rtc_err)?;
         match message.inner {
-            Some(uploader_message::Inner::DataResponse(DataResponse {
-                offset: new_data_offset,
-                data: new_data,
-            })) => {
-                let len = u64::try_from(new_data.len()).expect("128-bit machine??");
-                if *offset == new_data_offset {
+            Some(uploader_message::Inner::DataResponse(DataResponse { offset, data })) => {
+                let received_offset = decrypted_file.offset();
+                let len = u64::try_from(data.len()).expect("128-bit machine??");
+                if received_offset == offset {
                     debug!("received RTC DataResponse from uploader for offset {offset} len {len}");
-                    decrypted_file.write_all(&new_data).await?;
-                    *offset += len;
-                    *inflight_data_request = false;
-                    let _ignore = self
-                        .progress_tx
-                        .send(ProgressState { current: *offset, total: self.len });
+                    decrypted_file.write_all(&data).await?;
+                    let _ignore = self.progress_tx.send(ProgressState {
+                        current: received_offset + len,
+                        total: self.total_len,
+                    });
                 } else {
                     warn!("received RTC DataResponse from uploader for unexpected offset {offset} len {len}");
                 }
@@ -257,24 +253,41 @@ impl DownloadState<'_> {
         &mut self,
         client: &mut PeerToPeerClient,
     ) -> Result<ControlFlow<()>> {
-        let Self { inflight_data_request, decrypted_file, offset, len, .. } = self;
-        let chunk_len = (*len - *offset).min(CHUNK_SIZE);
-        if chunk_len != 0 {
-            if !*inflight_data_request {
-                debug!("sending RTC DataRequest to uploader for offset {offset} len {chunk_len}");
-                client.send_downloader_message(downloader_message::Inner::DataRequest(
-                    DataRequest { offset: *offset, len: chunk_len },
-                ))?;
-                *inflight_data_request = true;
+        let received_offset = self.decrypted_file.offset();
+        if received_offset < self.total_len {
+            while let Some(request @ DataRequest { offset: request_offset, len: request_len }) =
+                self.next_data_request(received_offset)
+            {
+                debug!("sending RTC DataRequest to uploader for offset {request_offset} len {request_len}");
+                client.send_downloader_message(downloader_message::Inner::DataRequest(request))?;
+                self.requested_offset += request_len;
             }
             Ok(Continue(()))
         } else {
             debug!("incoming RTC transfer finished");
-            decrypted_file.flush().await?;
+            self.decrypted_file.flush().await?;
             client.send_downloader_message(downloader_message::Inner::TransferFinished(
                 TransferFinished {},
             ))?;
             Ok(Break(()))
+        }
+    }
+
+    fn next_data_request(&self, received_offset: u64) -> Option<DataRequest> {
+        let Self { requested_offset, total_len, .. } = self;
+        let inflight_len = requested_offset.checked_sub(received_offset);
+        let inflight_len = inflight_len.expect("requested_offset < received_offset");
+        let unrequested_len = *total_len - *requested_offset;
+        let request_len = MAX_P2P_INFLIGHT_DATA_LEN
+            .saturating_sub(inflight_len)
+            .min(unrequested_len)
+            .min(CHUNK_SIZE);
+
+        if request_len != 0 {
+            let data_request = DataRequest { offset: *requested_offset, len: request_len };
+            Some(data_request)
+        } else {
+            None
         }
     }
 }
