@@ -259,8 +259,13 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                 }
             }
             rtc_signaling_message::Inner::IceCandidate(ice_candidate) => {
-                let candidate = &ice_candidate.candidate;
-                info!("sending RTC ICE candidate to peer: {candidate}");
+                match &*ice_candidate.candidate {
+                    "" => {
+                        debug!("dropping empty RTC ICE candidate");
+                        return Ok(());
+                    }
+                    candidate => info!("sending RTC ICE candidate to peer: {candidate}"),
+                }
             }
         }
         self.signaling
@@ -342,12 +347,16 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                 }
             }
             Some(rtc_signaling_message::Inner::IceCandidate(ice_candidate)) => {
-                let candidate = &ice_candidate.candidate;
-                info!("adding RTC ICE candidate from peer: {candidate}");
-                self.connection
-                    .peer
-                    .add_remote_candidate(ice_candidate)
-                    .await?;
+                match &*ice_candidate.candidate {
+                    "" => warn!("dropping empty RTC ICE candidate from peer"),
+                    candidate => {
+                        info!("adding RTC ICE candidate from peer: {candidate}");
+                        self.connection
+                            .peer
+                            .add_remote_candidate(ice_candidate)
+                            .await?;
+                    }
+                }
             }
             None => {
                 // Unfortunately, with prost there's no way to log about what message type this actually was.
