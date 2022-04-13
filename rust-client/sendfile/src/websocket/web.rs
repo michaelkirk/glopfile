@@ -92,7 +92,6 @@ impl super::WebSocketConnection for WebWebSocketConnection {
                         .expect("WebSocket message data is of type ArrayBuffer");
                     let data = Uint8Array::new(&data_buffer);
                     let message = WebSocketMessage::decode(Bytes::from(data.to_vec()))?;
-                    debug!("received websocket message: {message:?}");
                     if let ControlFlow::Break(()) = handle_incoming_message(message) {
                         shared.close()?;
                     }

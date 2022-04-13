@@ -109,7 +109,7 @@ pub(crate) struct RTCThreadDiedError;
 #[allow(dead_code)] // inhibit "variant is never constructed" warnings when no implementation is compiled
 #[derive(Debug)]
 pub enum PeerConnectionEvent {
-    OutgoingSignalingMessage(RtcSignalingMessage),
+    OutgoingSignalingMessage(rtc_signaling_message::Inner),
     DataChannelOpened,
     DataChannelError(Box<dyn std::error::Error + Send + Sync + 'static>),
     DataChannelMessage(Bytes),
@@ -169,7 +169,6 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
     }
 
     pub async fn create_offer(&mut self) -> Result<(), Error> {
-        debug!("creating RTC offer");
         self.connection.peer.create_offer().await
     }
 
@@ -201,7 +200,6 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 
             match handler_message {
                 Event::IncomingSignalingMessage(message) => {
-                    debug!("received RTC signaling message: {message:?}");
                     self.handle_incoming_signaling_message(message).await?;
                 }
 
@@ -213,14 +211,11 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                     event: PeerConnectionEvent::OutgoingSignalingMessage(message),
                     ..
                 } => {
-                    debug!("sending RTC signaling message: {message:?}");
-                    self.signaling
-                        .send(web_socket_message::Inner::RtcSignaling(message).into())
-                        .await?;
+                    self.handle_outgoing_signaling_message(message).await?;
                 }
 
                 Event::Connection { event: PeerConnectionEvent::DataChannelOpened, .. } => {
-                    debug!("RTC data channel opened");
+                    info!("RTC data channel opened");
                     if let Break(()) = handler.data_channel_opened(self).await? {
                         break;
                     }
@@ -247,6 +242,38 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
         Ok(())
     }
 
+    async fn handle_outgoing_signaling_message(
+        &mut self,
+        message: rtc_signaling_message::Inner,
+    ) -> Result<(), Error> {
+        match &message {
+            rtc_signaling_message::Inner::SessionDescription(local_description) => {
+                let sdp = &local_description.sdp;
+                use SessionDescriptionType::{Answer, Offer, Pranswer, Rollback};
+                match local_description.sdp_type() {
+                    Offer => info!("sending RTC offer to peer: {sdp}"),
+                    Answer => info!("sending RTC answer to peer: {sdp}"),
+                    sdp_type @ (Pranswer | Rollback) => {
+                        panic!("sending unexpected RTC signaling message to peer: {sdp_type:?}");
+                    }
+                }
+            }
+            rtc_signaling_message::Inner::IceCandidate(ice_candidate) => {
+                let candidate = &ice_candidate.candidate;
+                info!("sending RTC ICE candidate to peer: {candidate}");
+            }
+        }
+        self.signaling
+            .send(
+                web_socket_message::Inner::RtcSignaling(RtcSignalingMessage {
+                    inner: Some(message),
+                })
+                .into(),
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn handle_incoming_signaling_message(
         &mut self,
         message: RtcSignalingMessage,
@@ -255,18 +282,22 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
             Some(rtc_signaling_message::Inner::SessionDescription(remote_description)) => {
                 let local_description_type = self.connection.peer.local_description_type();
                 let remote_description_type = remote_description.sdp_type();
+                let remote_description_sdp = &remote_description.sdp;
 
                 use SessionDescriptionType::{Answer, Offer, Pranswer, Rollback};
                 match (local_description_type, remote_description_type) {
                     // receive an offer when we haven't sent one
                     (_local @ (None | Some(Answer)), _remote @ Offer) => {
                         if let Some(_) = local_description_type {
+                            info!("received new RTC offer from peer; resetting connection: {remote_description_sdp}");
                             let connection_id = self.connection.id.next();
                             let tx = self
                                 .tx
                                 .upgrade()
                                 .ok_or_else(|| Error::rtc_err(RTCThreadDiedError))?;
                             self.connection = Connection::new(connection_id, tx)?;
+                        } else {
+                            info!("received RTC offer from peer: {remote_description_sdp}");
                         }
                         self.connection
                             .peer
@@ -277,6 +308,7 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 
                     // receive an answer to an offer we sent
                     (_local @ Some(Offer), _remote @ Answer) => {
+                        info!("received RTC answer from peer: {remote_description_sdp}");
                         self.connection
                             .peer
                             .set_remote_description(remote_description)
@@ -285,27 +317,33 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 
                     // receive a non-offer message when we haven't sent one
                     (_local @ None, _remote @ (Answer | Pranswer | Rollback)) => {
-                        warn!("unexpected SDP {remote_description_type:?} from peer");
+                        warn!("unexpected RTC SDP {remote_description_type:?} from peer: {remote_description_sdp}");
                     }
 
                     // receive a non-answer to an offer we sent
                     (_local @ Some(Offer), _remote @ (Offer | Pranswer | Rollback)) => {
-                        warn!("unexpected SDP {remote_description_type:?} from peer after sending an Offer");
+                        warn!("unexpected RTC SDP {remote_description_type:?} from peer after sending an Offer: \
+                               {remote_description_sdp}");
                     }
 
                     // receive a non-offer after we sent an answer
                     (_local @ Some(Answer), _remote @ (Answer | Pranswer | Rollback)) => {
-                        warn!("unexpected SDP {remote_description_type:?} from peer after sending an Answer");
+                        warn!("unexpected RTC SDP {remote_description_type:?} from peer after sending an Answer: \
+                               {remote_description_sdp}");
                     }
 
                     // we don't send pranswer or rollback
                     (
                         _local @ Some(Pranswer | Rollback),
                         _remote @ (Offer | Answer | Pranswer | Rollback),
-                    ) => panic!("unexpected local session description {local_description_type:?}"),
+                    ) => panic!(
+                        "unexpected RTC local session description {local_description_type:?}"
+                    ),
                 }
             }
             Some(rtc_signaling_message::Inner::IceCandidate(ice_candidate)) => {
+                let candidate = &ice_candidate.candidate;
+                info!("adding RTC ICE candidate from peer: {candidate}");
                 self.connection
                     .peer
                     .add_remote_candidate(ice_candidate)

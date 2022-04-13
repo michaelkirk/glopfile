@@ -1,5 +1,4 @@
-use js_sys::{Array, ArrayBuffer, Uint8Array};
-use js_sys::{JsString, JSON};
+use js_sys::{Array, ArrayBuffer, JsString, Uint8Array};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -40,24 +39,16 @@ impl WebRtcPeerConnection {
         &self,
         local_description_init: &RtcSessionDescriptionInit,
     ) -> Result<(), Error> {
-        debug!(
-            "new RTC local session description: {local_description_init:?}",
-            local_description_init = JSON::stringify(local_description_init),
-        );
-
         JsFuture::from(self.rtc.set_local_description(local_description_init))
             .await
             .map_err(WebRtcError::from)?;
         let local_description = self.rtc.local_description().unwrap();
 
-        let signaling_message = websocket::RtcSignalingMessage {
-            inner: Some(websocket::rtc_signaling_message::Inner::SessionDescription(
-                (&local_description).into(),
-            )),
-        };
         self.tx
             .handle(PeerConnectionEvent::OutgoingSignalingMessage(
-                signaling_message,
+                websocket::rtc_signaling_message::Inner::SessionDescription(
+                    (&local_description).into(),
+                ),
             ));
 
         Ok(())
@@ -89,17 +80,8 @@ impl super::Rtc for WebRtc {
             let tx = tx.clone();
             move |ev: RtcPeerConnectionIceEvent| {
                 if let Some(candidate) = ev.candidate() {
-                    debug!(
-                        "new RTC ice candidate: {candidate:?}",
-                        candidate = JSON::stringify(&candidate.to_json()),
-                    );
-                    let signaling_message = websocket::RtcSignalingMessage {
-                        inner: Some(websocket::rtc_signaling_message::Inner::IceCandidate(
-                            (&candidate).into(),
-                        )),
-                    };
                     tx.handle(PeerConnectionEvent::OutgoingSignalingMessage(
-                        signaling_message,
+                        websocket::rtc_signaling_message::Inner::IceCandidate((&candidate).into()),
                     ));
                 }
             }
@@ -111,7 +93,7 @@ impl super::Rtc for WebRtc {
             {
                 let peer_connection = rtc.clone();
                 move |_event: Event| {
-                    debug!(
+                    info!(
                         "RTC connection state changed: {state:?}",
                         state = peer_connection.ice_connection_state()
                     );
@@ -125,7 +107,7 @@ impl super::Rtc for WebRtc {
             {
                 let peer_connection = rtc.clone();
                 move |_event: Event| {
-                    debug!(
+                    info!(
                         "RTC candidate gathering state changed: {state:?}",
                         state = peer_connection.ice_gathering_state(),
                     );
@@ -139,7 +121,7 @@ impl super::Rtc for WebRtc {
             {
                 let peer_connection = rtc.clone();
                 move |_event: Event| {
-                    debug!(
+                    info!(
                         "RTC signaling state changed: {state:?}",
                         state = peer_connection.signaling_state(),
                     );
@@ -185,7 +167,6 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
         callbacks.add_event(rtc.clone(), RtcDataChannel::set_onopen, {
             let tx = tx.clone();
             move |_event: Event| {
-                debug!("RTC data channel opened");
                 tx.handle(PeerConnectionEvent::DataChannelOpened);
             }
         });
@@ -194,7 +175,7 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
             rtc.clone(),
             RtcDataChannel::set_onclose,
             move |_event: Event| {
-                debug!("RTC data channel closed");
+                info!("RTC data channel closed");
             },
         );
 
@@ -202,7 +183,6 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
             let tx = tx.clone();
             move |event: ErrorEvent| {
                 let error = WebRtcError::from(event.error());
-                debug!("RTC data channel error: {error}");
                 tx.handle(PeerConnectionEvent::DataChannelError(Box::new(error)));
             }
         });

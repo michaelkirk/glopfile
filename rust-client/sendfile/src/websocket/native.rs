@@ -53,7 +53,6 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
                     futures::select! {
                         message = outgoing_message_stream.next() => match message {
                             Some((message, reply_tx)) => {
-                                debug!("sending websocket message with len {len}", len = message.len());
                                 connection.get_mut().send(message).await?;
                                 let _ = reply_tx.send(());
                             }
@@ -61,11 +60,10 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
                         },
                         message = connection.next() => match message {
                             Some(Ok(tungstenite::Message::Text(text))) => {
-                                debug!("received websocket text message: {text}");
+                                warn!("received unexpected websocket text message: {text}");
                             }
                             Some(Ok(tungstenite::Message::Binary(data))) => {
                                 let message = WebSocketMessage::decode(Bytes::from(data))?;
-                                debug!("received websocket message: {message:?}");
                                 if let ControlFlow::Break(()) = handle_incoming_message(message) {
                                     break;
                                 }

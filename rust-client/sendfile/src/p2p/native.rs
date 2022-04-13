@@ -135,42 +135,32 @@ impl PeerConnectionHandler for NativePeerConnectionHandler {
     }
 
     fn on_description(&mut self, session_description: SessionDescription) {
-        debug!("new RTC session description: {session_description:?}");
-        let signaling_message = websocket::RtcSignalingMessage {
-            inner: Some(websocket::rtc_signaling_message::Inner::SessionDescription(
-                (&session_description).into(),
-            )),
-        };
         self.tx
             .handle(PeerConnectionEvent::OutgoingSignalingMessage(
-                signaling_message,
+                websocket::rtc_signaling_message::Inner::SessionDescription(
+                    (&session_description).into(),
+                ),
             ));
     }
 
     fn on_candidate(&mut self, candidate: IceCandidate) {
-        debug!("new RTC ice candidate: {candidate:?}");
-        let signaling_message = websocket::RtcSignalingMessage {
-            inner: Some(websocket::rtc_signaling_message::Inner::IceCandidate(
-                candidate.into(),
-            )),
-        };
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
         self.tx
             .handle(PeerConnectionEvent::OutgoingSignalingMessage(
-                signaling_message,
+                websocket::rtc_signaling_message::Inner::IceCandidate(candidate.into()),
             ));
     }
 
     fn on_connection_state_change(&mut self, state: ConnectionState) {
-        debug!("RTC connection state changed: {state:?}");
+        info!("RTC connection state changed: {state:?}");
     }
 
     fn on_gathering_state_change(&mut self, state: GatheringState) {
-        debug!("RTC candidate gathering state changed: {state:?}");
+        info!("RTC candidate gathering state changed: {state:?}");
     }
 
     fn on_signaling_state_change(&mut self, state: SignalingState) {
-        debug!("RTC signaling state changed: {state:?}");
+        info!("RTC signaling state changed: {state:?}");
     }
 
     fn on_data_channel(&mut self, data_channel: Box<RtcDataChannel<Self::DCH>>) {
@@ -182,17 +172,15 @@ impl PeerConnectionHandler for NativePeerConnectionHandler {
 
 impl DataChannelHandler for NativeDataChannelHandler {
     fn on_open(&mut self) {
-        debug!("RTC data channel opened");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
         self.tx.handle(PeerConnectionEvent::DataChannelOpened);
     }
 
     fn on_closed(&mut self) {
-        debug!("RTC data channel closed");
+        info!("RTC data channel closed");
     }
 
     fn on_error(&mut self, error: &str) {
-        debug!("RTC data channel error: {error}");
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
         self.tx
             .handle(PeerConnectionEvent::DataChannelError(error.into()));
