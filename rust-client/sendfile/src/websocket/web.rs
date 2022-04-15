@@ -126,7 +126,7 @@ impl super::WebSocketConnection for WebWebSocketConnection {
         }
     }
 
-    async fn send(&mut self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
+    async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
         self.shared.error.take().map(Err).unwrap_or(Ok(()))?;
         if self.shared.closed.get() {
             return Err(WebSocketError::Closed);

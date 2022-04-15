@@ -8,6 +8,7 @@ pub mod protocol {
 }
 
 use std::ops::ControlFlow;
+use std::sync::Arc;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
@@ -18,7 +19,7 @@ cfg_if::cfg_if! {
 }
 
 pub struct WebSocketClient<T: WebSocketConnection = DefaultWebSocketConnection> {
-    connection: T,
+    connection: Arc<T>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -29,7 +30,7 @@ pub trait WebSocketConnection {
     ) -> Result<Self, WebSocketError>
     where
         Self: Sized;
-    async fn send(&mut self, message: &WebSocketMessage) -> Result<(), WebSocketError>;
+    async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError>;
 }
 
 pub(crate) use self::protocol::*;
@@ -62,12 +63,18 @@ impl<T: WebSocketConnection> WebSocketClient<T> {
         url: &str,
         handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
     ) -> Result<Self, WebSocketError> {
-        let connection = T::connect(url, handle_incoming_message).await?;
+        let connection = Arc::new(T::connect(url, handle_incoming_message).await?);
         Ok(Self { connection })
     }
 
-    pub async fn send(&mut self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
+    pub async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
         self.connection.send(message).await
+    }
+}
+
+impl<T: WebSocketConnection> Clone for WebSocketClient<T> {
+    fn clone(&self) -> Self {
+        Self { connection: Arc::clone(&self.connection) }
     }
 }
 

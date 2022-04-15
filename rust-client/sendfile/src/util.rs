@@ -2,6 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use futures::future::{abortable, AbortHandle, Aborted};
 use futures::{pin_mut, Future, FutureExt};
 
 #[cfg(target_arch = "wasm32")]
@@ -41,11 +42,36 @@ pub(crate) async fn timeout<F: Future>(
     duration: Duration,
     future: F,
 ) -> Result<F::Output, TimeoutError> {
-    let recv_future = future.fuse();
+    let future = future.fuse();
     let timeout_future = sleep(duration).fuse();
-    pin_mut!(recv_future, timeout_future);
+    pin_mut!(future, timeout_future);
     futures::select! {
-        recv_result = recv_future => Ok(recv_result),
+        result = future => Ok(result),
         _ = timeout_future => Err(TimeoutError),
     }
+}
+
+pub(crate) fn abortable_timeout<'a, F: Future + 'a>(
+    duration: Duration,
+    future: F,
+) -> (
+    impl Future<Output = Result<F::Output, TimeoutError>> + 'a,
+    AbortHandle,
+) {
+    let (timeout_future, abort_timeout_handle) = abortable(sleep(duration));
+    let cancellable_timeout_future = async {
+        let future = future.fuse();
+        let timeout_future = timeout_future.fuse();
+        pin_mut!(future, timeout_future);
+        loop {
+            futures::select! {
+                result = future => break Ok(result),
+                timeout_result = timeout_future => match timeout_result {
+                    Ok(()) => break Err(TimeoutError),
+                    Err(Aborted) => (),
+                }
+            }
+        }
+    };
+    (cancellable_timeout_future, abort_timeout_handle)
 }

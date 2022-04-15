@@ -1,5 +1,6 @@
 use std::ops::ControlFlow;
 use std::panic::resume_unwind;
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use bytes::Bytes;
@@ -13,12 +14,13 @@ use super::WebSocketError;
 
 pub struct NativeWebSocketConnection {
     outgoing_message_tx: mpsc::UnboundedSender<(tungstenite::Message, oneshot::Sender<()>)>,
-    thread: Option<JoinHandle<Result<(), WebSocketError>>>,
+    thread: Mutex<Option<JoinHandle<Result<(), WebSocketError>>>>,
 }
 
 impl NativeWebSocketConnection {
-    fn join(&mut self) -> Result<(), WebSocketError> {
-        match self.thread.take() {
+    fn join(&self) -> Result<(), WebSocketError> {
+        let thread = self.thread.lock().unwrap().take();
+        match thread {
             Some(thread) => thread
                 .join()
                 .unwrap_or_else(|panic_payload| resume_unwind(panic_payload)),
@@ -84,14 +86,14 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
                 Ok(())
             })
         });
-        let mut connection = Self { thread: Some(thread), outgoing_message_tx };
+        let connection = Self { thread: Mutex::new(Some(thread)), outgoing_message_tx };
         connect_rx
             .await
             .map_err(|_| connection.join().unwrap_err())?;
         Ok(connection)
     }
 
-    async fn send(&mut self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
+    async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
         let encoded = message.encode_to_vec();
         let (reply_tx, reply_rx) = oneshot::channel();
         self.outgoing_message_tx
