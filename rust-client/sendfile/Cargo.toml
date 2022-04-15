@@ -41,6 +41,7 @@ tungstenite = "0.16.0"
 
 [target."cfg(target_arch = \"wasm32\")".dependencies]
 js-sys = "0.3.56"
+gloo-timers = { version = "0.2.4", features = ["futures"] }
 sendfile-macros = { path = "../macros" }
 wasm-bindgen-futures = "0.4.29"
 web-sys = { version = "0.3.56", features = [

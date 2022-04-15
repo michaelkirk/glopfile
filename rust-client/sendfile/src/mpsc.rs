@@ -5,6 +5,8 @@ use std::task::{Context, Poll};
 use futures::Stream;
 use instant::Duration;
 
+use crate::util::{timeout, TimeoutError};
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
 #[cfg(target_arch = "wasm32")]
@@ -57,7 +59,6 @@ pub trait ChannelSend<T> {
 #[async_trait::async_trait(?Send)]
 pub trait ChannelReceive<T>: Stream<Item = T> {
     async fn recv(&mut self) -> Result<T, RecvError>;
-    async fn recv_timeout(&mut self, timeout: Duration) -> Result<T, RecvTimeoutError>;
 }
 
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
@@ -85,8 +86,11 @@ impl<T, C: ChannelReceive<T>> Receiver<T, C> {
         self.rx.recv().await
     }
 
-    pub async fn recv_timeout(&mut self, timeout: Duration) -> Result<T, RecvTimeoutError> {
-        self.rx.recv_timeout(timeout).await
+    pub async fn recv_timeout(&mut self, duration: Duration) -> Result<T, RecvTimeoutError> {
+        timeout(duration, self.rx.recv())
+            .await
+            .map_err(|TimeoutError| RecvTimeoutError::Timeout)?
+            .map_err(|RecvError| RecvTimeoutError::Disconnected)
     }
 }
 

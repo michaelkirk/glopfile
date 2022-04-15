@@ -11,7 +11,7 @@ use futures::{pin_mut, AsyncRead, Future, FutureExt};
 use prost::Message;
 use url::Url;
 
-use crate::api_client::EncryptedFile;
+use crate::api_client::{EncryptedFile, REQUEST_TIMEOUT};
 use crate::mpsc;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
@@ -104,8 +104,14 @@ impl UploaderClient {
             // Send a progress update to signal that we're done with encryption and about to start the upload.
             let _ignore = progress_tx.send(ProgressState { current: 0, total: encrypted_file_len });
 
+            let (relay_request_timeout_tx, mut relay_request_timeout_rx) = mpsc::channel();
+            let relay_request_timeout = relay_request_timeout_rx
+                .recv_timeout(REQUEST_TIMEOUT)
+                .fuse();
+            pin_mut!(relay_request_timeout);
+
             let upload_path = &provisioned_file.upload_path;
-            let state = UploadState { encrypted_file, progress_tx };
+            let state = UploadState { encrypted_file, progress_tx, relay_request_timeout_tx };
             match self.transport {
                 Transport::Both => {
                     let p2p_task = self.p2p_transfer_async(upload_path, state.clone()).fuse();
@@ -117,6 +123,10 @@ impl UploaderClient {
                                 warn!("error uploading via p2p; continuing relayed: {error}");
                             },
                             relayed_result = relayed_task => break relayed_result,
+                            relay_request_timeout_result = relay_request_timeout => match relay_request_timeout_result {
+                                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => (),
+                                Err(mpsc::RecvTimeoutError::Timeout) => break Err(Error::Timeout),
+                            },
                         }
                     }
                 }
@@ -126,6 +136,7 @@ impl UploaderClient {
                 }
                 Transport::Relay => {
                     let progress_tx = state.progress_tx.clone();
+                    let relay_request_timeout_tx = state.relay_request_timeout_tx.clone();
                     let websocket = self
                         .api_client
                         .connect_upload_websocket(upload_path, move |message| {
@@ -134,10 +145,11 @@ impl UploaderClient {
                                     debug!("ignoring received RTC signaling message: {message:?}")
                                 }
                                 Some(web_socket_message::Inner::UploadDataAck(ack)) => {
-                                    drop(progress_tx.send(ProgressState {
+                                    let _ignore = progress_tx.send(ProgressState {
                                         current: ack.offset,
                                         total: encrypted_file_len,
-                                    }))
+                                    });
+                                    let _ignore = relay_request_timeout_tx.send(());
                                 }
                                 // Unfortunately, with prost there's no way to log about what message type this actually was.
                                 None => warn!("unhandled websocket message type"),
@@ -145,7 +157,18 @@ impl UploaderClient {
                             Continue(())
                         })
                         .await?;
-                    self.relayed_transfer_async(upload_path, state).await?;
+
+                    let relayed_task = self.relayed_transfer_async(upload_path, state).fuse();
+                    pin_mut!(relayed_task);
+                    loop {
+                        futures::select! {
+                            relayed_result = relayed_task => break relayed_result?,
+                            relay_request_timeout_result = relay_request_timeout => match relay_request_timeout_result {
+                                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => (),
+                                Err(mpsc::RecvTimeoutError::Timeout) => return Err(Error::Timeout),
+                            },
+                        }
+                    }
                     // Close the websocket
                     drop(websocket);
                     Ok(())
@@ -158,6 +181,7 @@ impl UploaderClient {
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
         let progress_tx = state.progress_tx.clone();
+        let relay_request_timeout_tx = state.relay_request_timeout_tx.clone();
         let encrypted_file_len = state.encrypted_file.len();
         let websocket = self
             .api_client
@@ -170,8 +194,11 @@ impl UploaderClient {
                             .unwrap_or(Break(()))
                     }
                     Some(web_socket_message::Inner::UploadDataAck(ack)) => {
+                        // XXX We will lose progress updates for relayed transfer if p2p fails and the websocket is
+                        // dropped.
                         let _ignore = progress_tx
                             .send(ProgressState { current: ack.offset, total: encrypted_file_len });
+                        let _ignore = relay_request_timeout_tx.send(());
                         Continue(())
                     }
                     None => {
@@ -223,6 +250,7 @@ impl<F> ProvisionedFile<F> {
 struct UploadState {
     encrypted_file: EncryptedFile,
     progress_tx: mpsc::Sender<ProgressState<u64>>,
+    relay_request_timeout_tx: mpsc::Sender<()>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -232,7 +260,7 @@ impl PeerToPeerClientHandler for UploadState {
         client: &mut PeerToPeerClient,
         message_data: Bytes,
     ) -> Result<ControlFlow<()>> {
-        let Self { encrypted_file, progress_tx } = self;
+        let Self { encrypted_file, progress_tx, .. } = self;
         let message = DownloaderMessage::decode(message_data).map_err(Error::rtc_err)?;
         match message.inner {
             Some(downloader_message::Inner::DataRequest(DataRequest { offset, len })) => {

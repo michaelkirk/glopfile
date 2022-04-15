@@ -1,6 +1,7 @@
 #[cfg(target_arch = "wasm32")]
 mod web;
 
+use crate::util::TimeoutError;
 use crate::websocket::WebSocketError;
 
 #[derive(Debug, thiserror::Error)]
@@ -50,6 +51,12 @@ impl Error {
         E: std::error::Error + Send + Sync + 'static,
     {
         Error::RTCDataChannel { source: error.into() }
+    }
+}
+
+impl From<TimeoutError> for Error {
+    fn from(TimeoutError {}: TimeoutError) -> Self {
+        Self::Timeout
     }
 }
 

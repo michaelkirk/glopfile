@@ -3,26 +3,24 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
+use std::time::Duration;
 use std::{io, mem};
 
 use bytes::Bytes;
-use futures::{
-    ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, SinkExt, StreamExt,
-    TryStreamExt,
-};
+use futures::{ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, StreamExt};
 use reqwest::{header, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
-use crate::util::ProgressState;
+use crate::util::{timeout, ProgressState};
 use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{mpsc, Error, Result};
 
 // should this be configurable, or infinite even?
-#[cfg(not(target_arch = "wasm32"))]
-const CONTENT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(500);
+pub(crate) const CONTENT_TIMEOUT: Duration = Duration::from_secs(500);
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) struct ApiClient {
     cipher_key: CipherKey,
@@ -63,7 +61,8 @@ impl ApiClient {
 
         let form = [("encrypted_metadata", encoded_metadata)];
 
-        let response = self.http_client().post(url).form(&form).send().await?;
+        let request = self.http_client().post(url).form(&form);
+        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
 
         if !response.status().is_success() {
             return Err(Error::ClientHttpErrorResponse {
@@ -96,34 +95,16 @@ impl ApiClient {
         let file_size = file.encrypted_bytes.len();
         let last_position = file_size - 1;
 
-        let mut client_builder = self.http_client_builder();
-
-        cfg_if::cfg_if! {
-            if #[cfg(not(target_arch = "wasm32"))] {
-                client_builder = client_builder.timeout(CONTENT_TIMEOUT);
-            } else {
-                #[allow(clippy::self_assignment)] {
-                    client_builder = client_builder;
-                }
-            }
-        }
-
-        let client = client_builder
-            .build()
-            .expect("invalid timeout for http client?");
+        let client = self.http_client();
 
         let mut position = 0;
         loop {
             let send_bytes = file.encrypted_bytes.slice(position..);
-            let response = client
-                .post(url.clone())
-                .body(send_bytes)
-                .header(
-                    header::CONTENT_RANGE,
-                    format!("bytes {position}-{last_position}/{file_size}"),
-                )
-                .send()
-                .await?;
+            let request = client.post(url.clone()).body(send_bytes).header(
+                header::CONTENT_RANGE,
+                format!("bytes {position}-{last_position}/{file_size}"),
+            );
+            let response = request.send().await?;
 
             match response.status() {
                 status if status.is_success() => break,
@@ -163,7 +144,8 @@ impl ApiClient {
         let download_path = format!("/api/v1/download/{}", download_id);
         let url = self.endpoint.join(&download_path).expect("bad endpoint?");
 
-        let response = self.http_client().get(url).send().await?;
+        let request = self.http_client().get(url);
+        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
 
         if !response.status().is_success() {
             return Err(Error::ClientHttpErrorResponse {
@@ -221,25 +203,12 @@ impl ApiClient {
         let content_size = download_meta.file_meta.file_size;
         let content_offset = decrypted_file.offset();
 
-        let mut client_builder = self.http_client_builder();
-
-        cfg_if::cfg_if! {
-            if #[cfg(not(target_arch = "wasm32"))] {
-                client_builder = client_builder.timeout(CONTENT_TIMEOUT);
-            } else {
-                #[allow(clippy::self_assignment)] {
-                    client_builder = client_builder;
-                }
-            }
-        }
-
-        let response = client_builder
-            .build()
-            .expect("invalid timeout for http client?")
+        let request = self
+            .http_client()
             .get(content_url)
-            .header(header::RANGE, format!("bytes={content_offset}-"))
-            .send()
-            .await?;
+            .header(header::RANGE, format!("bytes={content_offset}-"));
+
+        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
 
         if !response.status().is_success() {
             return Err(Error::ClientHttpErrorResponse {
@@ -251,23 +220,21 @@ impl ApiClient {
         }
 
         debug!("waiting on response body");
-        let response_bytes_stream = response.bytes_stream().map_err(Error::from);
-        let mut decrypted_file_sink = Pin::new(&mut decrypted_file)
-            .into_sink()
-            .sink_map_err(Error::from);
-
+        let mut response_bytes_stream = response.bytes_stream();
         let mut content_downloaded = 0;
-        response_bytes_stream
-            .inspect_ok(|data| {
-                content_downloaded += u64::try_from(data.len()).unwrap();
-                let _ignore = progress_tx.send(ProgressState {
-                    current: content_offset + content_downloaded,
-                    total: content_size,
-                });
-            })
-            .forward(&mut decrypted_file_sink)
-            .await?;
-        decrypted_file_sink.close().await?;
+        while let Some(data) = timeout(CONTENT_TIMEOUT, response_bytes_stream.next())
+            .await?
+            .transpose()?
+        {
+            content_downloaded += u64::try_from(data.len()).expect("128-bit machine?");
+            let _ignore = progress_tx.send(ProgressState {
+                current: content_offset + content_downloaded,
+                total: content_size,
+            });
+            decrypted_file.write_all(&data).await?;
+        }
+        decrypted_file.flush().await?;
+        decrypted_file.close().await?;
 
         Ok(())
     }
@@ -285,7 +252,7 @@ impl ApiClient {
         let request = self.http_client().get(content_url);
         let request = request.header(header::RANGE, format!("bytes=-0"));
 
-        let response = request.send().await?;
+        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
         match response.status() {
             status if status.is_success() => (),
             StatusCode::NOT_FOUND => {
