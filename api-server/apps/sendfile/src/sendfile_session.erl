@@ -262,9 +262,11 @@ handle_start_download_call(Downloader, From, #state{pending = #pending_data{}=Pe
     PositionUpdatedDownloader =
         case Downloader#downloader.position of
             PendingPosition ->
+                NewPosition = Downloader#downloader.position + PendingDataSize,
                 send_data(PendingData, Downloader),
+                send_upload_progress(NewPosition, State#state.uploader_ws),
                 pending_data_reply(PendingWaiter, ok),
-                Downloader#downloader{position = Downloader#downloader.position + PendingDataSize};
+                Downloader#downloader{position = NewPosition};
             DownloaderPosition ->
                 pending_data_reply(PendingWaiter, {position, DownloaderPosition}),
                 Downloader
@@ -324,11 +326,13 @@ handle_start_upload_call(Uploader, From, State) ->
     Monitor = monitor(process, Uploader#uploader.pid),
     case State#state.pending of
         #pending_data{}=Pending ->
+            send_upload_progress(Uploader#uploader.position, State#state.uploader_ws),
             UpdatedWaiterPending = Pending#pending_data{waiter = {start_upload, From}},
             {noreply, State#state{uploader = Uploader#uploader{monitor = Monitor}, pending = UpdatedWaiterPending}};
         #pending_error{}=Pending ->
             {reply, Pending#pending_error.error, State#state{pending = undefined}};
         _ ->
+            send_upload_progress(Uploader#uploader.position, State#state.uploader_ws),
             {reply, {ok, self()}, State#state{uploader = Uploader#uploader{monitor = Monitor}}}
     end.
 
