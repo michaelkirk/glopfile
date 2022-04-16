@@ -7,6 +7,8 @@ use backoff::future::Retry;
 use backoff::Notify;
 use futures::future::{abortable, AbortHandle, Aborted};
 use futures::{pin_mut, Future, FutureExt};
+use http::header;
+use http::header::HeaderValue;
 
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod web;
@@ -14,6 +16,8 @@ pub(crate) mod web;
 mod progress;
 
 pub use progress::{Progress, ProgressState};
+
+use crate::Error;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
@@ -42,6 +46,8 @@ impl Future for Sleep {
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 #[error("Timed out")]
 pub(crate) struct TimeoutError;
+
+pub(crate) type TimeoutResult<T> = Result<T, TimeoutError>;
 
 pub(crate) async fn timeout<F: Future>(
     duration: Duration,
@@ -123,4 +129,35 @@ where
 {
     backoff.reset();
     Retry::new(Sleeper, backoff, notify, operation)
+}
+
+pub(crate) trait ResponseExt: Sized {
+    fn retry_after(&self) -> Result<Option<Duration>, Error>;
+}
+
+impl ResponseExt for reqwest::Response {
+    fn retry_after(&self) -> Result<Option<Duration>, Error> {
+        match self.headers().get(header::RETRY_AFTER) {
+            Some(header) => parse_retry_after(header),
+            None => Ok(None),
+        }
+    }
+}
+
+impl<T> ResponseExt for http::Response<T> {
+    fn retry_after(&self) -> Result<Option<Duration>, Error> {
+        match self.headers().get(header::RETRY_AFTER) {
+            Some(header) => parse_retry_after(header),
+            None => Ok(None),
+        }
+    }
+}
+
+pub(crate) fn parse_retry_after(header: &HeaderValue) -> Result<Option<Duration>, Error> {
+    let retry_after = header
+        .to_str()
+        .map_err(|_| Error::InvalidServerResponse("Non-utf8 Retry-After header value"))?
+        .parse()
+        .map_err(|_| Error::InvalidServerResponse("Invalid Retry-After header value"))?;
+    Ok(Some(Duration::from_secs(retry_after)))
 }

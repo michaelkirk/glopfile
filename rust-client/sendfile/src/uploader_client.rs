@@ -5,22 +5,25 @@ mod web;
 
 use std::io;
 use std::ops::ControlFlow::{self, Break, Continue};
+use std::sync::Arc;
 
 use backoff::ExponentialBackoff;
 use bytes::Bytes;
+use crossbeam_utils::atomic::AtomicCell;
 use futures::future::{AbortHandle, OptionFuture};
 use futures::{pin_mut, AsyncRead, Future, FutureExt};
 use prost::Message;
 use url::Url;
 
 use crate::api_client::{EncryptedFile, REQUEST_TIMEOUT};
+use crate::error::BackoffResultExt;
 use crate::mpsc;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
     TransferFinished,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
-use crate::util::{abortable_timeout, retry, Progress, ProgressState};
+use crate::util::{abortable_timeout, retry, Progress, ProgressState, TimeoutResult};
 use crate::websocket::{web_socket_message, WebSocketClient};
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
@@ -108,16 +111,28 @@ impl UploaderClient {
 
             // Set up the the relay task if necessary.
             let upload_path = &provisioned_file.upload_path;
-            let (relay_request_timeout_handle, relay_task) = match self.transport {
+            let relay_request_timeout_handle = RelayRequestTimeoutHandle::default();
+            let relay_task = match self.transport {
                 Transport::Relay | Transport::Both => {
-                    let relay_task = self
-                        .api_client
-                        .upload_file(encrypted_file.clone(), upload_path);
-                    let (relay_task, relay_request_timeout_handle) =
-                        abortable_timeout(REQUEST_TIMEOUT, relay_task);
-                    (Some(relay_request_timeout_handle), Some(relay_task.fuse()))
+                    let encrypted_file = encrypted_file.clone();
+                    let relay_request_timeout_handle = relay_request_timeout_handle.clone();
+                    let backoff = ExponentialBackoff::default();
+                    let relay_task = retry(backoff, move || {
+                        let encrypted_file = encrypted_file.clone();
+                        let relay_request_timeout_handle = relay_request_timeout_handle.clone();
+                        async move {
+                            let task = self.api_client.upload_file(encrypted_file, upload_path);
+                            let (task, relay_request_timeout_handle_handle) =
+                                abortable_timeout(REQUEST_TIMEOUT, task);
+                            relay_request_timeout_handle.put(relay_request_timeout_handle_handle);
+                            let result: TimeoutResult<_> = task.await;
+                            let result: Result<_> = result.backoff()?;
+                            result.backoff()
+                        }
+                    });
+                    Some(relay_task.fuse())
                 }
-                Transport::P2P => (None, None),
+                Transport::P2P => None,
             };
             let relay_task = OptionFuture::from(relay_task);
 
@@ -136,7 +151,7 @@ impl UploaderClient {
             // Connect to the websocket in a retry loop.
             let (websocket_tx, mut websocket_rx) = mpsc::channel();
             let websocket_task = retry(ExponentialBackoff::default(), || async {
-                let websocket = self
+                let websocket_result = self
                     .connect_websocket(
                         upload_path,
                         encrypted_file_len,
@@ -144,19 +159,19 @@ impl UploaderClient {
                         relay_request_timeout_handle.clone(),
                         signaling_message_handler.clone(),
                     )
-                    .await
-                    .map_err(|error| {
-                        warn!("error connecting to websocket: {error}");
-                        Error::from(error)
-                    })?;
+                    .await;
+                if let Err(error) = &websocket_result {
+                    warn!("error connecting to websocket: {error}");
+                }
+                let websocket = websocket_result.backoff()?;
 
                 // The RTC thread might not be running, so ignore an error sending to it.
                 let _ignore = websocket_tx.send(websocket.clone());
-                let () = websocket.join().await.map_err(|error| {
+                let join_result = websocket.join().await;
+                if let Err(error) = &join_result {
                     warn!("websocket error: {error}");
-                    Error::from(error)
-                })?;
-                Ok::<_, backoff::Error<Error>>(())
+                }
+                join_result.backoff()
             });
 
             // Set up the P2P task if necessary.
@@ -191,7 +206,7 @@ impl UploaderClient {
                         warn!("error uploading via p2p; continuing relayed: {error}");
                     },
                     relay_result = relay_task => if let Some(relay_result) = relay_result {
-                        break relay_result?;
+                        break relay_result;
                     },
                     websocket_result = websocket_task => match websocket_result {
                         Ok(()) => warn!("websocket closed; continuing relayed"),
@@ -207,7 +222,7 @@ impl UploaderClient {
         upload_path: &str,
         encrypted_file_len: u64,
         progress_tx: mpsc::Sender<ProgressState<u64>>,
-        mut relay_request_timeout_handle: Option<AbortHandle>,
+        relay_request_timeout_handle: RelayRequestTimeoutHandle,
         signaling_message_handler: Option<SignalingMessageHandler>,
     ) -> Result<WebSocketClient> {
         let api_client = &self.api_client;
@@ -227,10 +242,7 @@ impl UploaderClient {
                 Some(web_socket_message::Inner::UploadDataAck(ack)) => {
                     let _ignore = progress_tx
                         .send(ProgressState { current: ack.offset, total: encrypted_file_len });
-                    if let Some(relay_request_timeout_handle) = relay_request_timeout_handle.take()
-                    {
-                        relay_request_timeout_handle.abort();
-                    }
+                    relay_request_timeout_handle.cancel();
                     Continue(())
                 }
                 None => {
@@ -311,6 +323,24 @@ impl PeerToPeerClientHandler for UploadState {
                 warn!("unhandled RTC data channel message type from downloader");
                 Ok(Continue(()))
             }
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct RelayRequestTimeoutHandle {
+    handle: Arc<AtomicCell<Option<AbortHandle>>>,
+}
+const _ASSERT: () = debug_assert!(AtomicCell::<AtomicCell<Option<AbortHandle>>>::is_lock_free());
+
+impl RelayRequestTimeoutHandle {
+    fn put(&self, handle: AbortHandle) {
+        self.handle.store(Some(handle));
+    }
+
+    fn cancel(&self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
         }
     }
 }

@@ -190,6 +190,9 @@ impl Shared {
 
 impl From<JsValue> for WebSocketError {
     fn from(from: JsValue) -> Self {
+        // TODO Sadly we cannot tell what type of error this is, whether it be an HTTP Client Error, Server Error, or
+        // plain IO Error. This matters because some errors are retriable and some are not. Maybe we could try to probe
+        // the server by sending a non-websocket HTTP request to find out the status code?
         Self::WebSocketClient {
             source: from
                 .as_string()

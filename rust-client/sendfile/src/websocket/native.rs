@@ -14,6 +14,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use super::protocol::*;
 use super::WebSocketError;
+use crate::util::ResponseExt;
 
 pub struct NativeWebSocketConnection {
     outgoing_message_tx: mpsc::UnboundedSender<(tungstenite::Message, oneshot::Sender<()>)>,
@@ -125,6 +126,7 @@ impl From<tungstenite::Error> for WebSocketError {
             tungstenite::Error::Http(response) => Self::ClientHttpErrorResponse {
                 message: "failed to connect to websocket",
                 status: response.status().as_u16(),
+                retry_after: response.retry_after().ok().flatten(),
             },
             tungstenite::Error::Io(source) => Self::IO { source },
             source => Self::WebSocketClient { source: Box::new(source) },

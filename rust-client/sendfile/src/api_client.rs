@@ -1,25 +1,28 @@
 use std::ops::ControlFlow;
-
 use std::pin::Pin;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{io, mem};
 
+use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use futures::{ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, StreamExt};
-use reqwest::{header, StatusCode};
+use reqwest::{header, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
-use crate::util::{timeout, ProgressState};
+use crate::error::{BackoffResultExt, IntoBackoffResultExt};
+use crate::util::{retry, timeout, ProgressState, TimeoutResult};
 use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{mpsc, Error, Result};
 
 // should this be configurable, or infinite even?
-pub(crate) const CONTENT_TIMEOUT: Duration = Duration::from_secs(500);
+pub(crate) const CONTENT_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) struct ApiClient {
@@ -61,15 +64,18 @@ impl ApiClient {
 
         let form = [("encrypted_metadata", encoded_metadata)];
 
-        let request = self.http_client().post(url).form(&form);
-        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
+        let client = self.http_client();
 
-        if !response.status().is_success() {
-            return Err(Error::ClientHttpErrorResponse {
-                message: "failed to provision file",
-                status: response.status().as_u16(),
-            });
-        }
+        let backoff = ExponentialBackoff::default();
+        let response = retry(backoff, || async {
+            let request = client.post(url.clone()).form(&form);
+            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: reqwest::Result<_> = result.backoff()?;
+            let response: Response = result.backoff()?;
+            let response: Response = response.ok_or_backoff("failed to provision file")?;
+            Ok::<_, backoff::Error<Error>>(response)
+        })
+        .await?;
 
         let provision_file_response = response.json::<ProvisionFileResponse>().await?;
         Ok(provision_file_response)
@@ -97,62 +103,74 @@ impl ApiClient {
 
         let client = self.http_client();
 
-        let mut position = 0;
-        loop {
-            let send_bytes = file.encrypted_bytes.slice(position..);
-            let request = client.post(url.clone()).body(send_bytes).header(
-                header::CONTENT_RANGE,
-                format!("bytes {position}-{last_position}/{file_size}"),
-            );
-            let response = request.send().await?;
+        // We don't actually have concurrency here, because retry() awaits each future we return from the
+        // closure before returning a new one, but the compiler doesn't know that.
+        let position_shared: AtomicUsize = Default::default();
+        let backoff = ExponentialBackoff::default();
+        retry(backoff, || async {
+            loop {
+                let mut position = position_shared.load(Relaxed);
+                let send_bytes = file.encrypted_bytes.slice(position..);
+                let request = client.post(url.clone()).body(send_bytes).header(
+                    header::CONTENT_RANGE,
+                    format!("bytes {position}-{last_position}/{file_size}"),
+                );
 
-            match response.status() {
-                status if status.is_success() => break,
-                StatusCode::CONFLICT => {
-                    let response_bytes = response.bytes().await?;
+                // We can't have a request timeout here since we don't know whether the request has actually
+                // been accepted but we're just waiting to send data (or sending data just takes a long time).
+                // Upload request timeouts have to happen at a higher level, with help from feedback from the
+                // server via websocket.
+                let response = request.send().await.backoff()?;
+
+                if let StatusCode::CONFLICT = response.status() {
+                    let response_bytes = response.bytes().await.backoff()?;
                     let conflict_response: UploadConflictResponse =
                         serde_json::from_slice(&response_bytes).map_err(|error| {
                             error!("invalid server 409 Conflict response: {}", error);
-                            Error::InvalidServerResponse("conflict error response")
+                            backoff::Error::permanent(Error::InvalidServerResponse(
+                                "Invalid conflict error response",
+                            ))
                         })?;
                     position =
                         usize::try_from(conflict_response.position).expect("file fits in memory");
+                    position_shared.store(position, Relaxed);
                     if position == file_size {
-                        break;
+                        break Ok::<_, backoff::Error<Error>>(());
                     } else if position > file_size {
                         let error_message = format!(
                             "Downloader requested file position {position} \
                              which is greater than file size {file_size}.",
                         );
-                        return Err(Error::InvalidPeerMessage { source: error_message.into() });
+                        return Err(backoff::Error::permanent(Error::InvalidPeerMessage {
+                            source: error_message.into(),
+                        }));
                     } else {
                         // fall through and retry
                     }
-                }
-                status => {
-                    return Err(Error::ClientHttpErrorResponse {
-                        message: "failed to upload content",
-                        status: status.as_u16(),
-                    })
+                } else {
+                    break response.ok_or_backoff("failed to upload content").map(drop);
                 }
             }
-        }
-        Ok(())
+        })
+        .await
     }
 
     pub async fn fetch_meta(&self, download_id: &DownloadId) -> Result<DownloadMeta> {
         let download_path = format!("/api/v1/download/{}", download_id);
         let url = self.endpoint.join(&download_path).expect("bad endpoint?");
 
-        let request = self.http_client().get(url);
-        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
+        let client = self.http_client();
 
-        if !response.status().is_success() {
-            return Err(Error::ClientHttpErrorResponse {
-                message: "failed to fetch download details",
-                status: response.status().as_u16(),
-            });
-        }
+        let backoff = ExponentialBackoff::default();
+        let response = retry(backoff, || async {
+            let request = client.get(url.clone());
+            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: reqwest::Result<_> = result.backoff()?;
+            let response: Response = result.backoff()?;
+            let response: Response = response.ok_or_backoff("failed to fetch download details")?;
+            Ok::<_, backoff::Error<Error>>(response)
+        })
+        .await?;
 
         #[derive(Debug, Deserialize, Serialize)]
         struct EncodedDownloadMeta {
@@ -193,7 +211,7 @@ impl ApiClient {
     pub async fn download_content(
         &self,
         download_meta: &DownloadMeta,
-        mut decrypted_file: DecryptedFile<'_>,
+        decrypted_file: DecryptedFile<'_>,
         progress_tx: mpsc::Sender<ProgressState<u64>>,
     ) -> Result<()> {
         let content_url = self
@@ -201,42 +219,52 @@ impl ApiClient {
             .join(&download_meta.encrypted_content_url)
             .map_err(|_| Error::InvalidInput("bad content url"))?;
         let content_size = download_meta.file_meta.file_size;
-        let content_offset = decrypted_file.offset();
 
-        let request = self
-            .http_client()
-            .get(content_url)
-            .header(header::RANGE, format!("bytes={content_offset}-"));
+        let client = self.http_client();
 
-        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
+        let backoff = ExponentialBackoff::default();
+        retry(backoff, || async {
+            let content_offset = decrypted_file.offset();
+            let request = client
+                .get(content_url.clone())
+                .header(header::RANGE, format!("bytes={content_offset}-"));
+            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: reqwest::Result<_> = result.backoff()?;
+            let response: Response = result.backoff()?;
+            let response: Response = response.ok_or_backoff("failed to download content")?;
 
-        if !response.status().is_success() {
-            return Err(Error::ClientHttpErrorResponse {
-                message: "failed to download content",
-                status: response.status().as_u16(),
-            });
-        } else {
-            debug!("received successful response headers");
-        }
+            debug!("waiting on response body");
+            let mut response_bytes_stream = response.bytes_stream();
+            let mut content_downloaded = 0;
+            let mut decrypted_file = decrypted_file.clone();
+            while let Some(data) = timeout(CONTENT_TIMEOUT, response_bytes_stream.next())
+                .await
+                .backoff()?
+                .transpose()
+                .backoff()?
+            {
+                content_downloaded += u64::try_from(data.len()).expect("128-bit machine?");
+                let _ignore = progress_tx.send(ProgressState {
+                    current: content_offset + content_downloaded,
+                    total: content_size,
+                });
+                let () = decrypted_file
+                    .write_all(&data)
+                    .await
+                    .map_err(|error| backoff::Error::permanent(error.into()))?;
+            }
+            let () = decrypted_file
+                .flush()
+                .await
+                .map_err(|error| backoff::Error::permanent(error.into()))?;
+            let () = decrypted_file
+                .close()
+                .await
+                .map_err(|error| backoff::Error::permanent(error.into()))?;
 
-        debug!("waiting on response body");
-        let mut response_bytes_stream = response.bytes_stream();
-        let mut content_downloaded = 0;
-        while let Some(data) = timeout(CONTENT_TIMEOUT, response_bytes_stream.next())
-            .await?
-            .transpose()?
-        {
-            content_downloaded += u64::try_from(data.len()).expect("128-bit machine?");
-            let _ignore = progress_tx.send(ProgressState {
-                current: content_offset + content_downloaded,
-                total: content_size,
-            });
-            decrypted_file.write_all(&data).await?;
-        }
-        decrypted_file.flush().await?;
-        decrypted_file.close().await?;
-
-        Ok(())
+            Ok::<_, backoff::Error<Error>>(())
+        })
+        .await
     }
 
     pub async fn finish_download(&self, download_meta: &DownloadMeta) -> Result<()> {
@@ -249,22 +277,25 @@ impl ApiClient {
             .join(&download_meta.encrypted_content_url)
             .map_err(|_| Error::InvalidInput("bad content url"))?;
 
-        let request = self.http_client().get(content_url);
-        let request = request.header(header::RANGE, format!("bytes=-0"));
+        let client = self.http_client();
 
-        let response = timeout(REQUEST_TIMEOUT, request.send()).await??;
-        match response.status() {
-            status if status.is_success() => (),
-            StatusCode::NOT_FOUND => {
+        let backoff = ExponentialBackoff::default();
+        retry(backoff, || async {
+            let request = client
+                .get(content_url.clone())
+                .header(header::RANGE, format!("bytes=-0"));
+            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: reqwest::Result<_> = result.backoff()?;
+            let response: Response = result.backoff()?;
+            if let StatusCode::NOT_FOUND = response.status() {
                 // The session was already terminated; treat this as a success.
+                Ok::<_, backoff::Error<Error>>(())
+            } else {
+                response.ok_or_backoff("failed to finish download")?;
+                Ok(())
             }
-            status => {
-                return Err(Error::ClientHttpErrorResponse {
-                    message: "failed to finish download",
-                    status: status.as_u16(),
-                });
-            }
-        }
+        })
+        .await?;
 
         Ok(())
     }

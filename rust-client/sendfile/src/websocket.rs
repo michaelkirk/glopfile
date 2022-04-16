@@ -9,6 +9,7 @@ pub mod protocol {
 
 use std::ops::ControlFlow;
 use std::sync::Arc;
+use std::time::Duration;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
@@ -39,7 +40,11 @@ pub(crate) use self::protocol::*;
 #[derive(Debug, thiserror::Error)]
 pub enum WebSocketError {
     #[error("API status {status} - {message}")]
-    ClientHttpErrorResponse { message: &'static str, status: u16 },
+    ClientHttpErrorResponse {
+        message: &'static str,
+        status: u16,
+        retry_after: Option<Duration>,
+    },
     #[error("WebSocket closed")]
     Closed,
     #[error("IO Error: {source}")]
