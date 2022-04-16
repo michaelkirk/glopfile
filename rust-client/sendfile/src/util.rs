@@ -2,6 +2,9 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use backoff::backoff::Backoff;
+use backoff::future::Retry;
+use backoff::Notify;
 use futures::future::{abortable, AbortHandle, Aborted};
 use futures::{pin_mut, Future, FutureExt};
 
@@ -14,9 +17,11 @@ pub use progress::{Progress, ProgressState};
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
-        use gloo_timers::future::{sleep as sleep_impl, TimeoutFuture as SleepImpl};
+        use web::{send_sleep as send_sleep_impl, SendSleep, sleep as sleep_impl, Sleep as SleepImpl};
     } else {
-        use tokio::time::{sleep as sleep_impl, Sleep as SleepImpl};
+        use tokio::time::{
+            sleep as send_sleep_impl, sleep as sleep_impl, Sleep as SendSleep, Sleep as SleepImpl,
+        };
     }
 }
 
@@ -74,4 +79,48 @@ pub(crate) fn abortable_timeout<'a, F: Future + 'a>(
         }
     };
     (cancellable_timeout_future, abort_timeout_handle)
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NoopNotify;
+impl<E> Notify<E> for NoopNotify {
+    fn notify(&mut self, _error: E, _duration: Duration) {}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sleeper;
+
+impl backoff::future::Sleeper for Sleeper {
+    type Sleep = SendSleep;
+
+    fn sleep(&self, duration: Duration) -> Self::Sleep {
+        send_sleep_impl(duration)
+    }
+}
+
+pub(crate) fn retry<I, E, Fn, Fut, B>(
+    backoff: B,
+    operation: Fn,
+) -> Retry<Sleeper, B, NoopNotify, Fn, Fut>
+where
+    B: Backoff,
+    Fn: FnMut() -> Fut,
+    Fut: Future<Output = Result<I, backoff::Error<E>>>,
+{
+    retry_notify(backoff, operation, NoopNotify)
+}
+
+pub(crate) fn retry_notify<I, E, Fn, Fut, B, N>(
+    mut backoff: B,
+    operation: Fn,
+    notify: N,
+) -> Retry<Sleeper, B, N, Fn, Fut>
+where
+    B: Backoff,
+    Fn: FnMut() -> Fut,
+    Fut: Future<Output = Result<I, backoff::Error<E>>>,
+    N: Notify<E>,
+{
+    backoff.reset();
+    Retry::new(Sleeper, backoff, notify, operation)
 }

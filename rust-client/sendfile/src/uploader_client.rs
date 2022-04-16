@@ -6,6 +6,7 @@ mod web;
 use std::io;
 use std::ops::ControlFlow::{self, Break, Continue};
 
+use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use futures::future::{AbortHandle, OptionFuture};
 use futures::{pin_mut, AsyncRead, Future, FutureExt};
@@ -19,7 +20,7 @@ use crate::p2p::protocol::{
     TransferFinished,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
-use crate::util::{abortable_timeout, Progress, ProgressState};
+use crate::util::{abortable_timeout, retry, Progress, ProgressState};
 use crate::websocket::{web_socket_message, WebSocketClient};
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
@@ -132,47 +133,72 @@ impl UploaderClient {
                 Transport::Relay => (None, None),
             };
 
-            // Connect to the websocket.
-            let websocket = self
-                .connect_websocket(
-                    upload_path,
-                    encrypted_file_len,
-                    progress_tx.clone(),
-                    relay_request_timeout_handle,
-                    signaling_message_handler,
-                )
-                .await?;
+            // Connect to the websocket in a retry loop.
+            let (websocket_tx, mut websocket_rx) = mpsc::channel();
+            let websocket_task = retry(ExponentialBackoff::default(), || async {
+                let websocket = self
+                    .connect_websocket(
+                        upload_path,
+                        encrypted_file_len,
+                        progress_tx.clone(),
+                        relay_request_timeout_handle.clone(),
+                        signaling_message_handler.clone(),
+                    )
+                    .await
+                    .map_err(|error| {
+                        warn!("error connecting to websocket: {error}");
+                        Error::from(error)
+                    })?;
+
+                // The RTC thread might not be running, so ignore an error sending to it.
+                let _ignore = websocket_tx.send(websocket.clone());
+                let () = websocket.join().await.map_err(|error| {
+                    warn!("websocket error: {error}");
+                    Error::from(error)
+                })?;
+                Ok::<_, backoff::Error<Error>>(())
+            });
 
             // Set up the P2P task if necessary.
-            let state = UploadState { encrypted_file, progress_tx };
+            let state = UploadState { encrypted_file, progress_tx: progress_tx.clone() };
             let p2p_task = p2p_client.map(|mut p2p_client| {
                 let mut state = state.clone();
-                let websocket = websocket.clone();
                 async move {
-                    p2p_client.set_websocket(websocket).await?;
-                    p2p_client.transfer(&mut state, None).await?;
-                    Ok::<_, Error>(())
+                    loop {
+                        let websocket = websocket_rx
+                            .recv()
+                            .await
+                            .map_err(|error| Error::WebSocketClient { source: error.into() })?;
+                        p2p_client.set_websocket(websocket).await?;
+                        match p2p_client.transfer(&mut state, None).await {
+                            Err(error @ Error::WebSocketClient { .. }) => {
+                                warn!("websocket error: {error}");
+                                // Fall through and retry with a new websocket.
+                            }
+                            result => break result,
+                        }
+                    }
                 }
             });
             let p2p_task = OptionFuture::from(p2p_task.map(FutureExt::fuse));
 
-            // Drive both the P2P and relay tasks.
-            pin_mut!(p2p_task, relay_task);
+            // Drive the P2P, relay, and websocket tasks.
+            let websocket_task = websocket_task.fuse();
+            pin_mut!(p2p_task, relay_task, websocket_task);
             loop {
                 futures::select! {
                     p2p_result = p2p_task => if let Some(Err(error)) = p2p_result {
                         warn!("error uploading via p2p; continuing relayed: {error}");
                     },
                     relay_result = relay_task => if let Some(relay_result) = relay_result {
-                        let () = relay_result??;
-                        break;
+                        break relay_result?;
                     },
+                    websocket_result = websocket_task => match websocket_result {
+                        Ok(()) => warn!("websocket closed; continuing relayed"),
+                        Err(error) => warn!("websocket error; continuing relayed: {error}"),
+                    }
                 }
             }
-
-            // Close the websocket.
-            drop(websocket);
-            Ok(())
         })
     }
 

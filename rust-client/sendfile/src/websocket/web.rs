@@ -3,6 +3,8 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use bytes::Bytes;
+use futures::future::{abortable, pending, AbortHandle, Abortable, Aborted, Pending};
+use futures::never::Never;
 use js_sys::ArrayBuffer;
 use js_sys::Promise;
 use js_sys::Uint8Array;
@@ -28,6 +30,8 @@ struct Shared {
     websocket: WebSocket,
     error: Cell<Option<WebSocketError>>,
     closed: Cell<bool>,
+    joiner_handle: AbortHandle,
+    joiner: Abortable<Pending<Never>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -74,10 +78,13 @@ impl super::WebSocketConnection for WebWebSocketConnection {
         }
 
         let mut callbacks = Callbacks::default();
+        let (joiner, joiner_handle) = abortable(pending());
         let shared = Rc::new(Shared {
             websocket: websocket.clone(),
             error: Default::default(),
             closed: Default::default(),
+            joiner_handle,
+            joiner,
         });
 
         websocket.set_onopen(None);
@@ -108,7 +115,7 @@ impl super::WebSocketConnection for WebWebSocketConnection {
                     code = event.code(),
                     reason = event.reason()
                 );
-                shared.closed.set(true);
+                shared.set_closed();
             }
         });
 
@@ -127,14 +134,17 @@ impl super::WebSocketConnection for WebWebSocketConnection {
     }
 
     async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
-        self.shared.error.take().map(Err).unwrap_or(Ok(()))?;
-        if self.shared.closed.get() {
-            return Err(WebSocketError::Closed);
+        if let Some(result) = self.shared.try_join() {
+            return result;
         }
 
         let encoded = message.encode_to_vec();
         self.shared.websocket.send_with_u8_array(&encoded)?;
         Ok(())
+    }
+
+    async fn join(&self) -> Result<(), WebSocketError> {
+        self.shared.join().await
     }
 }
 
@@ -142,16 +152,39 @@ impl Shared {
     fn catch(&self, fun: impl FnOnce() -> Result<(), WebSocketError>) {
         if let Err(error) = fun() {
             self.error.set(Some(error));
-            self.closed.set(true);
+            self.set_closed();
         }
     }
 
     fn close(&self) -> Result<(), WebSocketError> {
         if !self.closed.get() {
             self.websocket.close()?;
-            self.closed.set(true);
+            self.set_closed();
         }
         Ok(())
+    }
+
+    fn set_closed(&self) {
+        self.closed.set(true);
+        self.joiner_handle.abort();
+    }
+
+    fn try_join(&self) -> Option<Result<(), WebSocketError>> {
+        if let Some(error) = self.error.take() {
+            Some(Err(error))
+        } else if self.closed.get() {
+            Some(Err(WebSocketError::Closed))
+        } else {
+            None
+        }
+    }
+
+    async fn join(&self) -> Result<(), WebSocketError> {
+        let joiner = self.joiner.clone();
+        match joiner.await {
+            Ok(never) => match never {},
+            Err(Aborted) => self.try_join().unwrap(),
+        }
     }
 }
 

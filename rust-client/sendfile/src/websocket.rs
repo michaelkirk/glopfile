@@ -31,6 +31,7 @@ pub trait WebSocketConnection {
     where
         Self: Sized;
     async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError>;
+    async fn join(&self) -> Result<(), WebSocketError>;
 }
 
 pub(crate) use self::protocol::*;
@@ -69,6 +70,10 @@ impl<T: WebSocketConnection> WebSocketClient<T> {
 
     pub async fn send(&self, message: &WebSocketMessage) -> Result<(), WebSocketError> {
         self.connection.send(message).await
+    }
+
+    pub async fn join(&self) -> Result<(), WebSocketError> {
+        self.connection.join().await
     }
 }
 

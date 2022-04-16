@@ -12,7 +12,7 @@ impl<T> super::ChannelSend<T> for Sender<T> {
 }
 
 #[async_trait::async_trait(?Send)]
-impl<T: Send> super::ChannelReceive<T> for Receiver<T> {
+impl<T> super::ChannelReceive<T> for Receiver<T> {
     async fn recv(&mut self) -> Result<T, super::RecvError> {
         let result = self.next().await;
         result.ok_or(super::RecvError)

@@ -4,8 +4,11 @@ use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 use bytes::Bytes;
+use futures::future::{abortable, pending, Abortable, Aborted, Pending};
+use futures::never::Never;
 use futures::{SinkExt, StreamExt};
 use prost::Message;
+use scopeguard::guard;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -15,10 +18,11 @@ use super::WebSocketError;
 pub struct NativeWebSocketConnection {
     outgoing_message_tx: mpsc::UnboundedSender<(tungstenite::Message, oneshot::Sender<()>)>,
     thread: Mutex<Option<JoinHandle<Result<(), WebSocketError>>>>,
+    joiner: Abortable<Pending<Never>>,
 }
 
 impl NativeWebSocketConnection {
-    fn join(&self) -> Result<(), WebSocketError> {
+    fn join_sync(&self) -> Result<(), WebSocketError> {
         let thread = self.thread.lock().unwrap().take();
         match thread {
             Some(thread) => thread
@@ -39,7 +43,10 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
         let (connect_tx, connect_rx) = oneshot::channel();
         let (outgoing_message_tx, outgoing_message_rx) =
             mpsc::unbounded_channel::<(tungstenite::Message, oneshot::Sender<()>)>();
+        let (joiner, joiner_handle) = abortable(pending());
+        let join_guard = guard(joiner_handle, |joiner_handle| joiner_handle.abort());
         let thread = std::thread::spawn(move || {
+            let _join_guard = join_guard;
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
@@ -86,10 +93,10 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
                 Ok(())
             })
         });
-        let connection = Self { thread: Mutex::new(Some(thread)), outgoing_message_tx };
+        let connection = Self { thread: Mutex::new(Some(thread)), outgoing_message_tx, joiner };
         connect_rx
             .await
-            .map_err(|_| connection.join().unwrap_err())?;
+            .map_err(|_| connection.join_sync().unwrap_err())?;
         Ok(connection)
     }
 
@@ -98,9 +105,17 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.outgoing_message_tx
             .send((tungstenite::Message::Binary(encoded), reply_tx))
-            .map_err(|_| self.join().unwrap_err())?;
-        reply_rx.await.map_err(|_| self.join().unwrap_err())?;
+            .map_err(|_| self.join_sync().unwrap_err())?;
+        reply_rx.await.map_err(|_| self.join_sync().unwrap_err())?;
         Ok(())
+    }
+
+    async fn join(&self) -> Result<(), WebSocketError> {
+        let joiner = self.joiner.clone();
+        match joiner.await {
+            Ok(never) => match never {},
+            Err(Aborted) => self.join_sync(),
+        }
     }
 }
 
