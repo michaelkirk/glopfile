@@ -18,7 +18,7 @@ use web_sys::{BinaryType, CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 use crate::util::web::Callbacks;
 
 use super::protocol::*;
-use super::WebSocketError;
+use super::{WebSocketError, WebSocketKnownCloseStatus};
 
 pub struct WebWebSocketConnection {
     #[allow(unused)] // callbacks are held to maintain their reference counts
@@ -110,11 +110,11 @@ impl super::WebSocketConnection for WebWebSocketConnection {
         callbacks.add_event(websocket.clone(), WebSocket::set_onclose, {
             let shared = Rc::clone(&shared);
             move |event: CloseEvent| {
-                info!(
-                    "websocket closed with code {code}: {reason}",
-                    code = event.code(),
-                    reason = event.reason()
-                );
+                let status = event.code().into();
+                let reason = event.reason();
+                shared
+                    .error
+                    .set(Some(WebSocketError::Closed { status, reason }));
                 shared.set_closed();
             }
         });
@@ -129,7 +129,12 @@ impl super::WebSocketConnection for WebWebSocketConnection {
         if websocket.ready_state() == 1 {
             Ok(Self { callbacks, shared })
         } else {
-            Err(WebSocketError::Closed)
+            shared.try_join().unwrap_or_else(|| {
+                Err(WebSocketError::Closed {
+                    status: WebSocketKnownCloseStatus::ConnectionClosed.into(),
+                    reason: "closed immediately".into(),
+                })
+            })
         }
     }
 
@@ -169,11 +174,14 @@ impl Shared {
         self.joiner_handle.abort();
     }
 
-    fn try_join(&self) -> Option<Result<(), WebSocketError>> {
+    fn try_join<T>(&self) -> Option<Result<T, WebSocketError>> {
         if let Some(error) = self.error.take() {
             Some(Err(error))
         } else if self.closed.get() {
-            Some(Err(WebSocketError::Closed))
+            Some(Err(WebSocketError::Closed {
+                status: WebSocketKnownCloseStatus::ConnectionClosed.into(),
+                reason: "closed by application".into(),
+            }))
         } else {
             None
         }

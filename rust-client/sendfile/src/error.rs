@@ -7,7 +7,7 @@ use http::StatusCode;
 use reqwest::Response;
 
 use crate::util::{ResponseExt, TimeoutError};
-use crate::websocket::WebSocketError;
+use crate::websocket::{WebSocketCloseStatus, WebSocketError, WebSocketKnownCloseStatus};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -16,6 +16,11 @@ pub enum Error {
         message: &'static str,
         status: u16,
         retry_after: Option<Duration>,
+    },
+    #[error("WebSocket closed with status {status}: {reason}")]
+    WebSocketClosed {
+        status: WebSocketCloseStatus,
+        reason: String,
     },
     #[error("IO Error: {source}")]
     IO {
@@ -89,7 +94,7 @@ impl From<WebSocketError> for Error {
             WebSocketError::ClientHttpErrorResponse { message, status, retry_after } => {
                 Self::ClientHttpErrorResponse { message, status, retry_after }
             }
-            source @ WebSocketError::Closed => Self::WebSocketClient { source: Box::new(source) },
+            WebSocketError::Closed { status, reason } => Self::WebSocketClosed { status, reason },
             WebSocketError::IO { source } => Self::IO { source },
             WebSocketError::WebSocketClient { source } => Self::WebSocketClient { source },
             WebSocketError::InvalidMessage { source } => {
@@ -140,6 +145,23 @@ where
                              {status_error}"
                         );
                         backoff::Error::permanent(error)
+                    }
+                }
+            }
+            Error::WebSocketClosed { status: WebSocketCloseStatus::Known(status), .. } => {
+                use WebSocketKnownCloseStatus::*;
+                match status {
+                    Normal
+                    | Gone
+                    | MissingProtocolExtension
+                    | FrameTooLarge
+                    | Forbidden
+                    | InvalidFrameData
+                    | MissingStatusCode
+                    | UnsupportedFrameType
+                    | ProtocolError => backoff::Error::permanent(error),
+                    ConnectionClosed | InternalServerError | TlsError => {
+                        backoff::Error::transient(error)
                     }
                 }
             }

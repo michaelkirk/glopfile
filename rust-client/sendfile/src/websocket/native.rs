@@ -11,6 +11,7 @@ use prost::Message;
 use scopeguard::guard;
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tungstenite::protocol::CloseFrame;
 
 use super::protocol::*;
 use super::WebSocketError;
@@ -82,8 +83,11 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
                                 connection.get_mut().send(tungstenite::Message::Pong(payload)).await?;
                             }
                             Some(Ok(tungstenite::Message::Pong(_))) => (),
-                            Some(Ok(tungstenite::Message::Close(frame))) => {
-                                info!("websocket closed: {frame:?}");
+                            Some(Ok(tungstenite::Message::Close(None))) => break,
+                            Some(Ok(tungstenite::Message::Close(Some(CloseFrame { code, reason })))) => {
+                                let status = u16::from(code).into();
+                                let reason = reason.to_string();
+                                return Err(WebSocketError::Closed { status, reason })
                             }
                             Some(Err(error)) => return Err(error.into()),
                             None => break,
