@@ -63,7 +63,7 @@ init(Req, _InitialState) ->
           <<"expires">>       => <<"Fri, 1 Jan 1999 12:00:00 AM GMT">>,
           <<"pragma">>        => <<"no-cache">>,
           <<"access-control-allow-origin">> => <<"*">>,
-          <<"access-control-allow-methods">> => <<"GET, POST">>,
+          <<"access-control-allow-methods">> => <<"GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE">>,
           <<"access-control-allow-headers">> => <<"Content-Range, Range">>
          },
     StreamRespHeaders = RespHeaders#{<<"content-type">> => <<"application/octet-stream">>},
