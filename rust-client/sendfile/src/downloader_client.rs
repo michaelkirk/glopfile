@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures::channel::mpsc;
 use futures::{AsyncWriteExt, Future};
 use prost::Message;
 use url::Url;
@@ -24,7 +25,7 @@ use crate::p2p::protocol::{
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
 use crate::util::{Progress, ProgressState};
 use crate::websocket::web_socket_message;
-use crate::{mpsc, ApiClient, CipherKey, DownloadId, Error, Result, Transport};
+use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
 pub struct DownloaderClient {
     api_client: ApiClient,
@@ -106,7 +107,7 @@ impl DownloaderClient {
         &self,
         meta: &DownloadMeta,
         decrypted_file: DecryptedFile<'_>,
-        progress_tx: mpsc::Sender<ProgressState<u64>>,
+        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
     ) -> Result<()> {
         let result = self
             .api_client
@@ -121,7 +122,7 @@ impl DownloaderClient {
         meta: &DownloadMeta,
         decrypted_file: DecryptedFile<'_>,
         timeout: Option<Duration>,
-        progress_tx: mpsc::Sender<ProgressState<u64>>,
+        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
     ) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
         let signaling_message_handler = p2p_client.signaling_message_handler();
@@ -204,7 +205,7 @@ struct DownloadState<'a> {
     decrypted_file: DecryptedFile<'a>,
     requested_offset: u64,
     total_len: u64,
-    progress_tx: mpsc::Sender<ProgressState<u64>>,
+    progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -230,7 +231,7 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
                 if received_offset == offset {
                     debug!("received RTC DataResponse from uploader for offset {offset} len {len}");
                     decrypted_file.write_all(&data).await?;
-                    let _ignore = self.progress_tx.send(ProgressState {
+                    let _ignore = self.progress_tx.unbounded_send(ProgressState {
                         current: received_offset + len,
                         total: self.total_len,
                     });

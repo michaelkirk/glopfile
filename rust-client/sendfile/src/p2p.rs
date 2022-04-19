@@ -3,16 +3,18 @@ mod native;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
-use instant::{Duration, Instant};
 use std::collections::VecDeque;
 use std::ops::ControlFlow;
 use std::ops::ControlFlow::{Break, Continue};
 use std::sync::{Arc, Weak};
 
 use bytes::Bytes;
+use futures::channel::mpsc;
+use futures::StreamExt;
+use instant::{Duration, Instant};
 use prost::Message;
 
-use crate::mpsc;
+use crate::util::{timeout, TimeoutError};
 use crate::websocket::WebSocketClient;
 use crate::websocket::{
     rtc_signaling_message, web_socket_message, IceCandidate, RtcSignalingMessage,
@@ -33,13 +35,13 @@ cfg_if::cfg_if! {
 pub struct PeerToPeerClient<RtcTy: Rtc = DefaultRtc> {
     connection: Connection<RtcTy>,
     signaling: SignalingWebSocket,
-    tx: Weak<mpsc::Sender<Event>>,
-    rx: mpsc::Receiver<Event>,
+    tx: Weak<mpsc::UnboundedSender<Event>>,
+    rx: mpsc::UnboundedReceiver<Event>,
 }
 
 #[derive(Clone)]
 pub struct SignalingMessageHandler {
-    tx: Weak<mpsc::Sender<Event>>,
+    tx: Weak<mpsc::UnboundedSender<Event>>,
 }
 
 #[derive(Clone, Copy, Debug, thiserror::Error)]
@@ -49,7 +51,7 @@ pub struct SignalingMessageHandlerError;
 #[derive(Clone)]
 pub struct PeerConnectionEventHandler {
     connection_id: PeerConnectionId,
-    tx: Arc<mpsc::Sender<Event>>,
+    tx: Arc<mpsc::UnboundedSender<Event>>,
 }
 
 pub trait Rtc {
@@ -153,7 +155,7 @@ const STUN_SERVERS: &[&str] = &["stun:stun.l.google.com:19302"];
 
 impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
     pub fn new() -> Result<Self, Error> {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::unbounded();
         let connection_tx = Arc::new(tx);
         let tx = Arc::downgrade(&connection_tx);
         Ok(Self {
@@ -180,25 +182,20 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
     pub async fn transfer(
         &mut self,
         handler: &mut impl PeerToPeerClientHandler<RtcTy>,
-        timeout: Option<Duration>,
+        inactivity_timeout: Option<Duration>,
     ) -> Result<(), Error> {
-        let mut inactivity_timeout = timeout.map(Timeout::new);
+        let mut inactivity_timeout = inactivity_timeout.map(Timeout::new);
         loop {
             let handler_message = match &inactivity_timeout {
-                Some(timeout) => {
-                    let handler_rx_res = self.rx.recv_timeout(timeout.remaining()?).await;
-                    handler_rx_res.map_err(|error| match error {
-                        mpsc::RecvTimeoutError::Disconnected => Error::rtc_err(RTCThreadDiedError),
-                        mpsc::RecvTimeoutError::Timeout => Error::Timeout,
-                    })?
+                Some(inactivity_timeout) => {
+                    timeout(inactivity_timeout.remaining()?, self.rx.next())
+                        .await
+                        .map_err(|TimeoutError| Error::rtc_err(RTCThreadDiedError))?
                 }
-                None => {
-                    let handler_rx_res = self.rx.recv().await;
-                    handler_rx_res.map_err(|mpsc::RecvError| Error::rtc_err(RTCThreadDiedError))?
-                }
+                None => self.rx.next().await,
             };
 
-            match handler_message {
+            match handler_message.ok_or_else(|| Error::rtc_err(RTCThreadDiedError))? {
                 Event::IncomingSignalingMessage(message) => {
                     self.handle_incoming_signaling_message(message).await?;
                 }
@@ -392,7 +389,7 @@ impl SignalingMessageHandler {
         self.tx
             .upgrade()
             .ok_or(SignalingMessageHandlerError)?
-            .send(Event::IncomingSignalingMessage(message))
+            .unbounded_send(Event::IncomingSignalingMessage(message))
             .map_err(|_| SignalingMessageHandlerError)
     }
 }
@@ -402,13 +399,13 @@ impl PeerConnectionEventHandler {
         // an error sending to the main thread should mean the current RTC thread is going to shut down anyway
         let _ignore = self
             .tx
-            .send(Event::Connection { id: self.connection_id, event })
+            .unbounded_send(Event::Connection { id: self.connection_id, event })
             .map_err(|_| SignalingMessageHandlerError);
     }
 }
 
 impl<RtcTy: Rtc> Connection<RtcTy> {
-    fn new(id: PeerConnectionId, tx: Arc<mpsc::Sender<Event>>) -> Result<Self, Error> {
+    fn new(id: PeerConnectionId, tx: Arc<mpsc::UnboundedSender<Event>>) -> Result<Self, Error> {
         let handler = PeerConnectionEventHandler { connection_id: id, tx };
         let mut peer_connection = RtcTy::new_peer_connection(STUN_SERVERS, handler.clone())?;
         let data_channel =

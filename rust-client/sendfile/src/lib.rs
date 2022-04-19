@@ -15,7 +15,6 @@ mod api_client;
 mod cipher;
 mod downloader_client;
 mod error;
-mod mpsc;
 mod p2p;
 mod transport;
 mod uploader_client;

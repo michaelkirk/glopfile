@@ -10,14 +10,14 @@ use std::sync::Arc;
 use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use crossbeam_utils::atomic::AtomicCell;
+use futures::channel::mpsc;
 use futures::future::{AbortHandle, OptionFuture};
-use futures::{pin_mut, AsyncRead, Future, FutureExt};
+use futures::{pin_mut, AsyncRead, Future, FutureExt, StreamExt};
 use prost::Message;
 use url::Url;
 
 use crate::api_client::{EncryptedFile, REQUEST_TIMEOUT};
 use crate::error::BackoffResultExt;
-use crate::mpsc;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
     TransferFinished,
@@ -107,7 +107,8 @@ impl UploaderClient {
             let encrypted_file_len = encrypted_file.len();
 
             // Send a progress update to signal that we're done with encryption and about to start the upload.
-            let _ignore = progress_tx.send(ProgressState { current: 0, total: encrypted_file_len });
+            let _ignore =
+                progress_tx.unbounded_send(ProgressState { current: 0, total: encrypted_file_len });
 
             // Set up the the relay task if necessary.
             let upload_path = &provisioned_file.upload_path;
@@ -149,7 +150,7 @@ impl UploaderClient {
             };
 
             // Connect to the websocket in a retry loop.
-            let (websocket_tx, mut websocket_rx) = mpsc::channel();
+            let (websocket_tx, mut websocket_rx) = mpsc::unbounded();
             let websocket_task = retry(ExponentialBackoff::default(), || async {
                 let websocket_result = self
                     .connect_websocket(
@@ -166,7 +167,7 @@ impl UploaderClient {
                 let websocket = websocket_result.backoff()?;
 
                 // The RTC thread might not be running, so ignore an error sending to it.
-                let _ignore = websocket_tx.send(websocket.clone());
+                let _ignore = websocket_tx.unbounded_send(websocket.clone());
                 let join_result = websocket.join().await;
                 if let Err(error) = &join_result {
                     warn!("websocket error: {error}");
@@ -180,10 +181,10 @@ impl UploaderClient {
                 let mut state = state.clone();
                 async move {
                     loop {
-                        let websocket = websocket_rx
-                            .recv()
-                            .await
-                            .map_err(|error| Error::WebSocketClient { source: error.into() })?;
+                        let websocket = websocket_rx.next().await.ok_or_else(|| {
+                            let source = "WebSocket thread died".into();
+                            Error::WebSocketClient { source }
+                        })?;
                         p2p_client.set_websocket(websocket).await?;
                         match p2p_client.transfer(&mut state, None).await {
                             Err(error @ Error::WebSocketClient { .. }) => {
@@ -221,7 +222,7 @@ impl UploaderClient {
         &self,
         upload_path: &str,
         encrypted_file_len: u64,
-        progress_tx: mpsc::Sender<ProgressState<u64>>,
+        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
         relay_request_timeout_handle: RelayRequestTimeoutHandle,
         signaling_message_handler: Option<SignalingMessageHandler>,
     ) -> Result<WebSocketClient> {
@@ -240,8 +241,10 @@ impl UploaderClient {
                     }
                 }
                 Some(web_socket_message::Inner::UploadDataAck(ack)) => {
-                    let _ignore = progress_tx
-                        .send(ProgressState { current: ack.offset, total: encrypted_file_len });
+                    let _ignore = progress_tx.unbounded_send(ProgressState {
+                        current: ack.offset,
+                        total: encrypted_file_len,
+                    });
                     relay_request_timeout_handle.cancel();
                     Continue(())
                 }
@@ -285,7 +288,7 @@ impl<F> ProvisionedFile<F> {
 #[derive(Clone)]
 struct UploadState {
     encrypted_file: EncryptedFile,
-    progress_tx: mpsc::Sender<ProgressState<u64>>,
+    progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -306,13 +309,15 @@ impl PeerToPeerClientHandler for UploadState {
                 client.send_uploader_message(uploader_message::Inner::DataResponse(
                     DataResponse { data, offset },
                 ))?;
-                let _ = progress_tx
-                    .send(ProgressState { current: new_offset, total: encrypted_file.len() });
+                let _ = progress_tx.unbounded_send(ProgressState {
+                    current: new_offset,
+                    total: encrypted_file.len(),
+                });
                 Ok(Continue(()))
             }
             Some(downloader_message::Inner::TransferFinished(TransferFinished {})) => {
                 debug!("outgoing RTC transfer finished");
-                let _ = progress_tx.send(ProgressState {
+                let _ = progress_tx.unbounded_send(ProgressState {
                     current: encrypted_file.len(),
                     total: encrypted_file.len(),
                 });

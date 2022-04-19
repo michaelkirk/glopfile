@@ -1,14 +1,13 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use futures::channel::mpsc;
 use futures::{ready, Future, Stream};
 
-use crate::mpsc;
-
 #[pin_project::pin_project]
-pub struct Progress<T, F, C = mpsc::DefaultReceiver<ProgressState<T>>> {
+pub struct Progress<T, F> {
     #[pin]
-    progress_rx: mpsc::Receiver<ProgressState<T>, C>,
+    progress_rx: mpsc::UnboundedReceiver<ProgressState<T>>,
     #[pin]
     future: F,
 }
@@ -19,27 +18,26 @@ pub struct ProgressState<T> {
     pub total: T,
 }
 
-impl<T, F, C> Progress<T, F, C> {
-    pub fn new(progress_rx: mpsc::Receiver<ProgressState<T>, C>, future: F) -> Self {
+impl<T, F> Progress<T, F> {
+    pub fn new(progress_rx: mpsc::UnboundedReceiver<ProgressState<T>>, future: F) -> Self {
         Self { future, progress_rx }
     }
 }
 
-impl<T, F> Progress<T, F, mpsc::DefaultReceiver<ProgressState<T>>> {
+impl<T, F> Progress<T, F> {
     pub fn new_with<Fun>(fun: Fun) -> Self
     where
-        Fun: FnOnce(mpsc::Sender<ProgressState<T>>) -> F,
+        Fun: FnOnce(mpsc::UnboundedSender<ProgressState<T>>) -> F,
     {
-        let (progress_tx, progress_rx) = mpsc::channel();
+        let (progress_tx, progress_rx) = mpsc::unbounded();
         let future = fun(progress_tx);
         Self::new(progress_rx, future)
     }
 }
 
-impl<T, F, E, C> Stream for Progress<T, F, C>
+impl<T, F, E> Stream for Progress<T, F>
 where
     F: Future<Output = Result<(), E>>,
-    C: mpsc::ChannelReceive<ProgressState<T>>,
 {
     type Item = Result<ProgressState<T>, E>;
 
@@ -55,7 +53,7 @@ where
     }
 }
 
-impl<T, F: Future, C> Future for Progress<T, F, C> {
+impl<T, F: Future> Future for Progress<T, F> {
     type Output = F::Output;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

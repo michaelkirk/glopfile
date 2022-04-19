@@ -9,6 +9,7 @@ use std::{io, mem};
 
 use backoff::ExponentialBackoff;
 use bytes::Bytes;
+use futures::channel::mpsc;
 use futures::{ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, StreamExt};
 use reqwest::{header, Response, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,7 @@ use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
 use crate::error::{BackoffResultExt, IntoBackoffResultExt};
 use crate::util::{retry, timeout, ProgressState, TimeoutResult};
 use crate::websocket::{WebSocketClient, WebSocketMessage};
-use crate::{mpsc, Error, Result};
+use crate::{Error, Result};
 
 // should this be configurable, or infinite even?
 pub(crate) const CONTENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -212,7 +213,7 @@ impl ApiClient {
         &self,
         download_meta: &DownloadMeta,
         decrypted_file: DecryptedFile<'_>,
-        progress_tx: mpsc::Sender<ProgressState<u64>>,
+        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
     ) -> Result<()> {
         let content_url = self
             .endpoint
@@ -244,7 +245,7 @@ impl ApiClient {
                 .backoff()?
             {
                 content_downloaded += u64::try_from(data.len()).expect("128-bit machine?");
-                let _ignore = progress_tx.send(ProgressState {
+                let _ignore = progress_tx.unbounded_send(ProgressState {
                     current: content_offset + content_downloaded,
                     total: content_size,
                 });
