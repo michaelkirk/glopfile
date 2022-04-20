@@ -7,4 +7,4 @@ mod timeout;
 
 pub use progress::{Progress, ProgressState};
 pub(crate) use retry::{retry, ResponseExt};
-pub(crate) use timeout::{abortable_timeout, timeout, TimeoutError, TimeoutResult};
+pub(crate) use timeout::{TimeoutError, TimeoutExt, TimeoutResult};

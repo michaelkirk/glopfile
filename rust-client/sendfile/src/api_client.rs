@@ -18,7 +18,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
 use crate::error::{BackoffResultExt, IntoBackoffResultExt};
-use crate::util::{retry, timeout, ProgressState, TimeoutResult};
+use crate::util::{retry, ProgressState, TimeoutExt, TimeoutResult};
 use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{Error, Result};
 
@@ -70,7 +70,7 @@ impl ApiClient {
         let backoff = ExponentialBackoff::default();
         let response = retry(backoff, || async {
             let request = client.post(url.clone()).form(&form);
-            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
             let result: reqwest::Result<_> = result.backoff()?;
             let response: Response = result.backoff()?;
             let response: Response = response.ok_or_backoff("failed to provision file")?;
@@ -165,7 +165,7 @@ impl ApiClient {
         let backoff = ExponentialBackoff::default();
         let response = retry(backoff, || async {
             let request = client.get(url.clone());
-            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
             let result: reqwest::Result<_> = result.backoff()?;
             let response: Response = result.backoff()?;
             let response: Response = response.ok_or_backoff("failed to fetch download details")?;
@@ -229,7 +229,7 @@ impl ApiClient {
             let request = client
                 .get(content_url.clone())
                 .header(header::RANGE, format!("bytes={content_offset}-"));
-            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
             let result: reqwest::Result<_> = result.backoff()?;
             let response: Response = result.backoff()?;
             let response: Response = response.ok_or_backoff("failed to download content")?;
@@ -238,7 +238,9 @@ impl ApiClient {
             let mut response_bytes_stream = response.bytes_stream();
             let mut content_downloaded = 0;
             let mut decrypted_file = decrypted_file.clone();
-            while let Some(data) = timeout(CONTENT_TIMEOUT, response_bytes_stream.next())
+            while let Some(data) = response_bytes_stream
+                .next()
+                .timeout(CONTENT_TIMEOUT)
                 .await
                 .backoff()?
                 .transpose()
@@ -285,7 +287,7 @@ impl ApiClient {
             let request = client
                 .get(content_url.clone())
                 .header(header::RANGE, format!("bytes=-0"));
-            let result: TimeoutResult<_> = timeout(REQUEST_TIMEOUT, request.send()).await;
+            let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
             let result: reqwest::Result<_> = result.backoff()?;
             let response: Response = result.backoff()?;
             if let StatusCode::NOT_FOUND = response.status() {

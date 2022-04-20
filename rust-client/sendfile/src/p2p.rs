@@ -14,7 +14,7 @@ use futures::StreamExt;
 use instant::{Duration, Instant};
 use prost::Message;
 
-use crate::util::{timeout, TimeoutError};
+use crate::util::{TimeoutError, TimeoutExt};
 use crate::websocket::WebSocketClient;
 use crate::websocket::{
     rtc_signaling_message, web_socket_message, IceCandidate, RtcSignalingMessage,
@@ -187,11 +187,12 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
         let mut inactivity_timeout = inactivity_timeout.map(Timeout::new);
         loop {
             let handler_message = match &inactivity_timeout {
-                Some(inactivity_timeout) => {
-                    timeout(inactivity_timeout.remaining()?, self.rx.next())
-                        .await
-                        .map_err(|TimeoutError| Error::rtc_err(RTCThreadDiedError))?
-                }
+                Some(inactivity_timeout) => self
+                    .rx
+                    .next()
+                    .timeout(inactivity_timeout.remaining()?)
+                    .await
+                    .map_err(|TimeoutError| Error::rtc_err(RTCThreadDiedError))?,
                 None => self.rx.next().await,
             };
 

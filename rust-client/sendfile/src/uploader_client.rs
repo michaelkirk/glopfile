@@ -23,7 +23,7 @@ use crate::p2p::protocol::{
     TransferFinished,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
-use crate::util::{abortable_timeout, retry, Progress, ProgressState, TimeoutResult};
+use crate::util::{retry, Progress, ProgressState, TimeoutExt, TimeoutResult};
 use crate::websocket::{web_socket_message, WebSocketClient};
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
@@ -122,11 +122,12 @@ impl UploaderClient {
                         let encrypted_file = encrypted_file.clone();
                         let relay_request_timeout_handle = relay_request_timeout_handle.clone();
                         async move {
-                            let task = self.api_client.upload_file(encrypted_file, upload_path);
-                            let (task, relay_request_timeout_handle_handle) =
-                                abortable_timeout(REQUEST_TIMEOUT, task);
-                            relay_request_timeout_handle.put(relay_request_timeout_handle_handle);
-                            let result: TimeoutResult<_> = task.await;
+                            let relay_task = self
+                                .api_client
+                                .upload_file(encrypted_file, upload_path)
+                                .abortable_timeout(REQUEST_TIMEOUT);
+                            relay_request_timeout_handle.put(relay_task.timeout_handle().clone());
+                            let result: TimeoutResult<_> = relay_task.await;
                             let result: Result<_> = result.backoff()?;
                             result.backoff()
                         }
