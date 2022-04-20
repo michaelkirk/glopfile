@@ -63,14 +63,17 @@ pub(crate) trait IntoResultExt: Sized {
     fn ok_or(self, message: &'static str) -> Result<Self, Error>;
 }
 
-pub(crate) trait IntoBackoffResultExt: Sized {
+pub(crate) trait IntoRetriableResultExt: Sized {
     type Output;
-    fn ok_or_backoff(self, message: &'static str) -> Result<Self::Output, backoff::Error<Error>>;
+    fn ok_or_retriable_err(
+        self,
+        message: &'static str,
+    ) -> Result<Self::Output, backoff::Error<Error>>;
 }
 
-pub(crate) trait BackoffResultExt: Sized {
+pub(crate) trait AsRetriableResultExt: Sized {
     type Output;
-    fn backoff(self) -> Result<Self::Output, backoff::Error<Error>>;
+    fn as_retriable_result(self) -> Result<Self::Output, backoff::Error<Error>>;
 }
 
 impl Error {
@@ -117,19 +120,19 @@ impl IntoResultExt for Response {
     }
 }
 
-impl<T: IntoResultExt> IntoBackoffResultExt for T {
+impl<T: IntoResultExt> IntoRetriableResultExt for T {
     type Output = Self;
-    fn ok_or_backoff(self, message: &'static str) -> Result<Self, backoff::Error<Error>> {
-        self.ok_or(message).backoff()
+    fn ok_or_retriable_err(self, message: &'static str) -> Result<Self, backoff::Error<Error>> {
+        self.ok_or(message).as_retriable_result()
     }
 }
 
-impl<T, E> BackoffResultExt for Result<T, E>
+impl<T, E> AsRetriableResultExt for Result<T, E>
 where
     Error: From<E>,
 {
     type Output = T;
-    fn backoff(self) -> Result<T, backoff::Error<Error>> {
+    fn as_retriable_result(self) -> Result<T, backoff::Error<Error>> {
         self.map_err(Error::from).map_err(|error| match &error {
             Error::ClientHttpErrorResponse { retry_after: Some(retry_after), .. } => {
                 let retry_after = retry_after.clone();

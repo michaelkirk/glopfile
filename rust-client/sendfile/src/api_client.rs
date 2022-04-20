@@ -17,7 +17,7 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
-use crate::error::{BackoffResultExt, IntoBackoffResultExt};
+use crate::error::{AsRetriableResultExt, IntoRetriableResultExt};
 use crate::util::{retry, ProgressState, TimeoutExt, TimeoutResult};
 use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{Error, Result};
@@ -71,9 +71,9 @@ impl ApiClient {
         let response = retry(backoff, || async {
             let request = client.post(url.clone()).form(&form);
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.backoff()?;
-            let response: Response = result.backoff()?;
-            let response: Response = response.ok_or_backoff("failed to provision file")?;
+            let result: reqwest::Result<_> = result.as_retriable_result()?;
+            let response: Response = result.as_retriable_result()?;
+            let response: Response = response.ok_or_retriable_err("failed to provision file")?;
             Ok::<_, backoff::Error<Error>>(response)
         })
         .await?;
@@ -121,10 +121,10 @@ impl ApiClient {
                 // been accepted but we're just waiting to send data (or sending data just takes a long time).
                 // Upload request timeouts have to happen at a higher level, with help from feedback from the
                 // server via websocket.
-                let response = request.send().await.backoff()?;
+                let response = request.send().await.as_retriable_result()?;
 
                 if let StatusCode::CONFLICT = response.status() {
-                    let response_bytes = response.bytes().await.backoff()?;
+                    let response_bytes = response.bytes().await.as_retriable_result()?;
                     let conflict_response: UploadConflictResponse =
                         serde_json::from_slice(&response_bytes).map_err(|error| {
                             error!("invalid server 409 Conflict response: {}", error);
@@ -149,7 +149,9 @@ impl ApiClient {
                         // fall through and retry
                     }
                 } else {
-                    break response.ok_or_backoff("failed to upload content").map(drop);
+                    break response
+                        .ok_or_retriable_err("failed to upload content")
+                        .map(drop);
                 }
             }
         })
@@ -166,9 +168,10 @@ impl ApiClient {
         let response = retry(backoff, || async {
             let request = client.get(url.clone());
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.backoff()?;
-            let response: Response = result.backoff()?;
-            let response: Response = response.ok_or_backoff("failed to fetch download details")?;
+            let result: reqwest::Result<_> = result.as_retriable_result()?;
+            let response: Response = result.as_retriable_result()?;
+            let response: Response =
+                response.ok_or_retriable_err("failed to fetch download details")?;
             Ok::<_, backoff::Error<Error>>(response)
         })
         .await?;
@@ -230,9 +233,9 @@ impl ApiClient {
                 .get(content_url.clone())
                 .header(header::RANGE, format!("bytes={content_offset}-"));
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.backoff()?;
-            let response: Response = result.backoff()?;
-            let response: Response = response.ok_or_backoff("failed to download content")?;
+            let result: reqwest::Result<_> = result.as_retriable_result()?;
+            let response: Response = result.as_retriable_result()?;
+            let response: Response = response.ok_or_retriable_err("failed to download content")?;
 
             debug!("waiting on response body");
             let mut response_bytes_stream = response.bytes_stream();
@@ -242,9 +245,9 @@ impl ApiClient {
                 .next()
                 .timeout(CONTENT_TIMEOUT)
                 .await
-                .backoff()?
+                .as_retriable_result()?
                 .transpose()
-                .backoff()?
+                .as_retriable_result()?
             {
                 content_downloaded += u64::try_from(data.len()).expect("128-bit machine?");
                 let _ignore = progress_tx.unbounded_send(ProgressState {
@@ -288,13 +291,13 @@ impl ApiClient {
                 .get(content_url.clone())
                 .header(header::RANGE, format!("bytes=-0"));
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.backoff()?;
-            let response: Response = result.backoff()?;
+            let result: reqwest::Result<_> = result.as_retriable_result()?;
+            let response: Response = result.as_retriable_result()?;
             if let StatusCode::NOT_FOUND = response.status() {
                 // The session was already terminated; treat this as a success.
                 Ok::<_, backoff::Error<Error>>(())
             } else {
-                response.ok_or_backoff("failed to finish download")?;
+                response.ok_or_retriable_err("failed to finish download")?;
                 Ok(())
             }
         })

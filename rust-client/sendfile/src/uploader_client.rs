@@ -17,7 +17,7 @@ use prost::Message;
 use url::Url;
 
 use crate::api_client::{EncryptedFile, REQUEST_TIMEOUT};
-use crate::error::BackoffResultExt;
+use crate::error::AsRetriableResultExt;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
     TransferFinished,
@@ -128,8 +128,9 @@ impl UploaderClient {
                                 .abortable_timeout(REQUEST_TIMEOUT);
                             relay_request_timeout_handle.put(relay_task.timeout_handle().clone());
                             let result: TimeoutResult<_> = relay_task.await;
-                            let result: Result<_> = result.backoff()?;
-                            result.backoff()
+                            let result: Result<_> = result.as_retriable_result()?;
+                            let () = result.as_retriable_result()?;
+                            Ok(())
                         }
                     });
                     Some(relay_task.fuse())
@@ -165,7 +166,7 @@ impl UploaderClient {
                 if let Err(error) = &websocket_result {
                     warn!("error connecting to websocket: {error}");
                 }
-                let websocket = websocket_result.backoff()?;
+                let websocket = websocket_result.as_retriable_result()?;
 
                 // The RTC thread might not be running, so ignore an error sending to it.
                 let _ignore = websocket_tx.unbounded_send(websocket.clone());
@@ -173,7 +174,7 @@ impl UploaderClient {
                 if let Err(error) = &join_result {
                     warn!("websocket error: {error}");
                 }
-                join_result.backoff()
+                join_result.as_retriable_result()
             });
 
             // Set up the P2P task if necessary.
