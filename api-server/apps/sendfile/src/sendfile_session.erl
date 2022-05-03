@@ -7,7 +7,7 @@
 
 %% API
 -export([start/1, start_link/2, start_download/3, finish_download/1, start_upload/3, start_websocket/2, upload_data/2,
-         websocket_data/3, metadata/1]).
+         flush_upload/1, websocket_data/3, metadata/1]).
 -ignore_xref([start_link/2]).                   % xref doesn't take simple_one_for_one children into account
 
 %% sendfile_child callbacks
@@ -47,7 +47,7 @@
 
 -record(pending_data,
         {data :: data(),
-         waiter :: {start_upload | upload_data, {pid(), any()}},
+         waiter :: {flush_upload | upload_data, {pid(), any()}},
          position :: non_neg_integer(),
          size :: pos_integer()}).
 -type pending_data() :: #pending_data{}.
@@ -86,6 +86,10 @@
 -type upload_data_call() :: #upload_data_call{}.
 -type upload_data_result() :: ok | {error, data_pending} | upload_error().
 
+-record(flush_upload_call, {}).
+-type flush_upload_call() :: #flush_upload_call{}.
+-type flush_upload_result() :: ok | upload_error().
+
 -type websocket_data() :: {text | binary, iodata()}.
 -record(websocket_data_cast, {frame :: websocket_data(), from :: sendfile_websocket:direction()}).
 -type websocket_data_result() :: ok | {error, not_connected}.
@@ -95,7 +99,7 @@
 -type metadata_result() :: {ok, Metadata :: binary()}.
 
 -type call() :: start_download_call() | finish_download_call() | start_upload_call() | start_websocket_call() |
-                upload_data_call() | metadata_call().
+                upload_data_call() | flush_upload_call() | metadata_call().
 
 -type call_result() :: {error, sendfile_session_table:get_error()}.
 
@@ -142,6 +146,10 @@ start_websocket(Pid, download) ->
 -spec upload_data(pid(), data()) -> upload_data_result() | call_result().
 upload_data(Pid, Data) ->
     gen_server:call(Pid, #upload_data_call{data = Data}, infinity).
+
+-spec flush_upload(pid()) -> flush_upload_result() | call_result().
+flush_upload(Pid) ->
+    gen_server:call(Pid, #flush_upload_call{}, infinity).
 
 -spec websocket_data(pid(), websocket_data(), sendfile_websocket:direction()) -> websocket_data_result() | call_result().
 websocket_data(Pid, Frame, From) ->
@@ -198,6 +206,9 @@ handle_call(#start_websocket_call{from = FromWs}, From, State) ->
 
 handle_call(#upload_data_call{data = Data}, From, State) ->
     handle_upload_data_call(Data, From, State);
+
+handle_call(#flush_upload_call{}, From, State) ->
+    handle_flush_upload_call(From, State);
 
 handle_call(Request, From, State) ->
     ?LOG_WARNING("unknown call from ~p: ~p", [From, Request]),
@@ -322,13 +333,9 @@ handle_start_upload_call(Uploader, _From, #state{pending = #pending_data{positio
     {reply, {position, Position + PendingDataSize}, State};
 
 %% no other uploader is connected
-handle_start_upload_call(Uploader, From, State) ->
+handle_start_upload_call(Uploader, _From, State) ->
     Monitor = monitor(process, Uploader#uploader.pid),
     case State#state.pending of
-        #pending_data{}=Pending ->
-            send_upload_progress(Uploader#uploader.position, State#state.uploader_ws),
-            UpdatedWaiterPending = Pending#pending_data{waiter = {start_upload, From}},
-            {noreply, State#state{uploader = Uploader#uploader{monitor = Monitor}, pending = UpdatedWaiterPending}};
         #pending_error{}=Pending ->
             {reply, Pending#pending_error.error, State#state{pending = undefined}};
         _ ->
@@ -412,6 +419,30 @@ handle_upload_data_call({_, DataBin}=Data, From, State) ->
                           uploader = State#state.uploader#uploader{position = Position + DataSize}}}.
 
 
+-spec handle_flush_upload_call(From :: {pid(), any()}, state()) -> handle_call_result(flush_upload_result()).
+%% caller error; uploader pid doesn't match the caller
+handle_flush_upload_call({FromPid, _}, #state{uploader = #uploader{pid = UploaderPid}}=State)
+  when FromPid =/= UploaderPid ->
+    {reply, {error, connection_replaced}, State};
+
+%% caller error; no uploader is connected
+handle_flush_upload_call(_From, #state{uploader = undefined}=State) ->
+    {reply, {error, connection_replaced}, State};
+
+%% an upload error is pending
+handle_flush_upload_call(_From, #state{pending = #pending_error{}}=State) ->
+    {reply, State#state.pending#pending_error.error, State};
+
+%% upload data is pending
+handle_flush_upload_call(From, #state{pending = #pending_data{}}=State) ->
+    NewPending = State#state.pending#pending_data{waiter = {flush_upload, From}},
+    NewState = State#state{pending = NewPending},
+    {noreply, NewState};
+
+%% no upload data is pending
+handle_flush_upload_call(_From, #state{pending = undefined}=State) ->
+    {reply, ok, State}.
+
 -spec handle_websocket_data_cast(websocket_data(), sendfile_websocket:direction(), state()) -> handle_cast_result().
 %% frame received from downloader, when an uploader is connected
 handle_websocket_data_cast(Frame, download, #state{uploader_ws = #uploader_ws{pid = ToPid}}=State) ->
@@ -464,13 +495,12 @@ handle_downloader_ws_disconnected(State) ->
     State#state{downloader_ws = undefined}.
 
 
--spec pending_data_reply(From :: {start_upload | upload_data, {pid(), any()}}, Reply :: ok | {position, non_neg_integer()}) -> _.
-pending_data_reply({start_upload, From}, ok)    -> start_upload_reply(From, {ok, self()});
-pending_data_reply({start_upload, From}, Reply) -> start_upload_reply(From, Reply);
+-spec pending_data_reply(From :: {flush_upload | upload_data, {pid(), any()}}, Reply :: ok | {position, non_neg_integer()}) -> _.
+pending_data_reply({flush_upload, From}, Reply) -> flush_upload_reply(From, Reply);
 pending_data_reply({upload_data, From}, Reply)  -> upload_data_reply(From, Reply).
 
--spec start_upload_reply(From :: {pid(), any()}, Reply :: start_upload_result()) -> _.
-start_upload_reply(From, Reply) ->
+-spec flush_upload_reply(From :: {pid(), any()}, Reply :: flush_upload_result()) -> _.
+flush_upload_reply(From, Reply) ->
     gen_server:reply(From, Reply).
 
 -spec upload_data_reply(From :: {pid(), any()}, Reply :: upload_data_result()) -> _.
@@ -487,7 +517,7 @@ terminate_uploader(#state{uploader = undefined}=State, _Err) ->
 terminate_uploader(#state{uploader = #uploader{}, pending = #pending_data{waiter = {WaiterCall, From}}}=State, Err) ->
     demonitor(State#state.uploader#uploader.monitor),
     case WaiterCall of
-        start_upload -> start_upload_reply(From, Err);
+        flush_upload -> flush_upload_reply(From, Err);
         upload_data -> upload_data_reply(From, Err)
     end,
     State#state{uploader = undefined};

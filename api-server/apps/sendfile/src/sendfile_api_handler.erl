@@ -231,9 +231,18 @@ handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
     Tag = make_ref(),
     case parse_upload_position(Req) of
         {position, ReqPosition} ->
-            case sendfile_session:start_upload(Id, Tag, ReqPosition) of
+            StartAndFlushRes =
+                case sendfile_session:start_upload(Id, Tag, ReqPosition) of
+                    {ok, StartedPid} ->
+                        ok = cowboy_req:inform(100, Req),
+                        case sendfile_session:flush_upload(StartedPid) of
+                            ok -> {ok, StartedPid};
+                            FlushRes -> FlushRes
+                        end;
+                    UploadRes -> UploadRes
+                end,
+            case StartAndFlushRes of
                 {ok, Pid} ->
-                    ok = cowboy_req:inform(100, Req),
                     upload(Pid, Req);
                 {position, NewPosition} ->
                     {conflict, jsone:encode(upload_conflict_response(NewPosition))};
