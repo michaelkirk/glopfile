@@ -319,7 +319,7 @@ handle_start_upload_call(Uploader, _From, #state{downloader = #downloader{positi
 %% new uploader position doesn't match pending data position
 handle_start_upload_call(Uploader, _From, #state{pending = #pending_data{position = Position, size = PendingDataSize}}=State)
   when Uploader#uploader.position =/= Position + PendingDataSize ->
-    {reply, {position, Position}, State};
+    {reply, {position, Position + PendingDataSize}, State};
 
 %% no other uploader is connected
 handle_start_upload_call(Uploader, From, State) ->
