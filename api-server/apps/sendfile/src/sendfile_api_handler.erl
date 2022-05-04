@@ -228,11 +228,10 @@ handle_download(_Id, _Path, _Req) ->
 -spec handle_upload(Id :: binary(), Path :: binary(), cowboy:req()) -> handle_request_result().
 %% POST to top-level endpoint
 handle_upload(<<Id/binary>>, <<>>, #{method := <<"POST">>}=Req) ->
-    Tag = make_ref(),
     case parse_upload_position(Req) of
         {position, ReqPosition} ->
             StartAndFlushRes =
-                case sendfile_session:start_upload(Id, Tag, ReqPosition) of
+                case sendfile_session:start_upload(Id, ReqPosition) of
                     {ok, StartedPid} ->
                         case sendfile_session:flush_upload(StartedPid) of
                             ok -> {ok, StartedPid};

@@ -6,7 +6,7 @@
 -include("sendfile_websocket_protocol.hrl").
 
 %% API
--export([start/1, start_link/2, start_download/3, finish_download/1, start_upload/3, start_websocket/2, upload_data/2,
+-export([start/1, start_link/2, start_download/3, finish_download/1, start_upload/2, start_websocket/2, upload_data/2,
          flush_upload/1, websocket_data/3, metadata/1]).
 -ignore_xref([start_link/2]).                   % xref doesn't take simple_one_for_one children into account
 
@@ -33,7 +33,6 @@
 
 -record(uploader,
         {pid :: pid(),
-         tag :: any(),
          monitor = undefined :: erlang:reference() | undefined,
          position :: non_neg_integer()}).
 -type uploader() :: #uploader{}.
@@ -133,9 +132,9 @@ start_download(<<Id/binary>>, Tag, Position) ->
 finish_download(<<Id/binary>>) ->
     call(Id, #finish_download_call{}, ?TIMEOUT).
 
--spec start_upload(binary(), Tag :: any(), Position :: non_neg_integer()) -> start_upload_result() | call_result().
-start_upload(<<Id/binary>>, Tag, Position) ->
-    call(Id, #start_upload_call{from = #uploader{pid = self(), tag = Tag, position = Position}}, ?TIMEOUT).
+-spec start_upload(binary(), Position :: non_neg_integer()) -> start_upload_result() | call_result().
+start_upload(<<Id/binary>>, Position) ->
+    call(Id, #start_upload_call{from = #uploader{pid = self(), position = Position}}, ?TIMEOUT).
 
 -spec start_websocket(pid(), sendfile_websocket:direction()) -> start_websocket_result() | call_result().
 start_websocket(Pid, upload) ->
