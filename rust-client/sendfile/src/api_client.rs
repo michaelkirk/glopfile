@@ -132,8 +132,8 @@ impl ApiClient {
                                 "Invalid conflict error response",
                             ))
                         })?;
-                    position =
-                        usize::try_from(conflict_response.position).expect("file fits in memory");
+                    let old_position = position;
+                    position = usize::try_from(conflict_response.position).expect("file fits in memory");
                     position_shared.store(position, Relaxed);
                     if position == file_size {
                         break Ok::<_, backoff::Error<Error>>(());
@@ -144,6 +144,17 @@ impl ApiClient {
                         );
                         return Err(backoff::Error::permanent(Error::InvalidPeerMessage {
                             source: error_message.into(),
+                        }));
+                    } else if position == old_position {
+                        // Return an error when the server returns a 409 for same offset that we started with.
+                        // This isn't really an error, but we want to back off to be nice in case the server
+                        // is malfunctioning.
+                        warn!("server returned spurious 409 Conflict response with identical offset; \
+                               backing off.");
+                        break Err(backoff::Error::transient(Error::ClientHttpErrorResponse {
+                            message: "Spurious 409 Conflict response from server; identical offset.",
+                            status: StatusCode::CONFLICT.as_u16(),
+                            retry_after: None,
                         }));
                     } else {
                         // fall through and retry
