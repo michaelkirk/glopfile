@@ -334,13 +334,13 @@ handle_start_upload_call(Uploader, _From, #state{pending = #pending_data{positio
 %% no other uploader is connected
 handle_start_upload_call(Uploader, _From, State) ->
     Monitor = monitor(process, Uploader#uploader.pid),
-    case State#state.pending of
-        #pending_error{}=Pending ->
-            {reply, Pending#pending_error.error, State#state{pending = undefined}};
-        _ ->
-            send_upload_progress(Uploader#uploader.position, State#state.uploader_ws),
-            {reply, {ok, self()}, State#state{uploader = Uploader#uploader{monitor = Monitor}}}
-    end.
+    NewPending =
+        case State#state.pending of
+            #pending_error{} -> undefined;
+            Pending -> Pending
+        end,
+    send_upload_progress(Uploader#uploader.position, State#state.uploader_ws),
+    {reply, {ok, self()}, State#state{uploader = Uploader#uploader{monitor = Monitor}, pending = NewPending}}.
 
 
 -spec handle_start_websocket_call(downloader_ws() | uploader_ws(), From :: {pid(), any()}, state()) -> Res when
