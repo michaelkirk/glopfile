@@ -4,12 +4,14 @@ use std::sync::Arc;
 use aes_gcm::aead::NewAead;
 use aes_gcm::{AeadInPlace, Aes256Gcm};
 use bytes::Bytes;
+use hkdf::Hkdf;
+use sha2::Sha256;
 use tokio::task::spawn_blocking;
 
 use crate::{Error, Result};
 
 use super::buffer::{ContentCipherBufferCiphertextPartsMut, ContentCipherBufferPartsMut};
-use super::{ContentCipherBuffer, KEY_SIZE};
+use super::{CipherKey, ContentCipherBuffer, KEY_SIZE};
 
 pub struct NativeCipher {
     cipher: Arc<Aes256Gcm>,
@@ -17,8 +19,13 @@ pub struct NativeCipher {
 
 #[async_trait::async_trait(?Send)]
 impl super::Cipher for NativeCipher {
-    async fn new(key: &[u8; KEY_SIZE]) -> Self {
-        Self { cipher: Arc::new(Aes256Gcm::new(key.into())) }
+    async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self {
+        let mut aes_key = [0; KEY_SIZE];
+        let hkdf = Hkdf::<Sha256>::new(None, base_key.bytes());
+        hkdf.expand(&hkdf_info, &mut aes_key)
+            .expect("failed to derive key");
+
+        Self { cipher: Arc::new(Aes256Gcm::new(&aes_key.into())) }
     }
 
     async fn encrypt(&self, mut plaintext_and_nonce: ContentCipherBuffer, aad: Vec<u8>) -> Vec<u8> {
@@ -68,11 +75,11 @@ mod tests {
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
         let ciphertext = cipher
-            .encrypt(ContentCipherBuffer::from_plaintext(plaintext))
+            .encrypt_content(ContentCipherBuffer::from_plaintext(plaintext))
             .await;
         assert_eq!(
             plaintext.to_vec(),
-            cipher.decrypt(ciphertext).await.unwrap()
+            cipher.decrypt_content(ciphertext).await.unwrap()
         );
     }
 
@@ -82,9 +89,21 @@ mod tests {
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
         let mut ciphertext = cipher
-            .encrypt(ContentCipherBuffer::from_plaintext(plaintext))
+            .encrypt_content(ContentCipherBuffer::from_plaintext(plaintext))
             .await;
         ciphertext[0] += 1;
-        assert!(cipher.decrypt(ciphertext).await.is_err());
+        assert!(cipher.decrypt_content(ciphertext).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn mismatched_info() {
+        let cipher_key = CipherKey::random();
+        let cipher = ContentCipher::new(&cipher_key);
+        let plaintext = b"Hello World";
+        let ciphertext = cipher
+            .encrypt_content(ContentCipherBuffer::from_plaintext(plaintext))
+            .await;
+        assert!(cipher.decrypt_content(ciphertext.clone()).await.is_ok());
+        assert!(cipher.decrypt_metadata(ciphertext).await.is_err());
     }
 }

@@ -2,11 +2,11 @@ use bytes::Bytes;
 use js_sys::{Array, JsString, Uint8Array};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{window, AesGcmParams, CryptoKey, SubtleCrypto};
+use web_sys::{window, AesGcmParams, AesKeyGenParams, CryptoKey, HkdfParams, SubtleCrypto};
 
 use crate::{Error, Result};
 
-use super::{buffer::ContentCipherBufferPartsMut, ContentCipherBuffer, KEY_SIZE};
+use super::{buffer::ContentCipherBufferPartsMut, CipherKey, ContentCipherBuffer, KEY_SIZE};
 
 pub struct WebCipher {
     subtle: SubtleCrypto,
@@ -15,7 +15,7 @@ pub struct WebCipher {
 
 #[async_trait::async_trait(?Send)]
 impl super::Cipher for WebCipher {
-    async fn new(key: &[u8; KEY_SIZE]) -> Self
+    async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self
     where
         Self: Sized,
     {
@@ -23,30 +23,67 @@ impl super::Cipher for WebCipher {
         let crypto = window.crypto().expect("Window.crypto accessible");
         let subtle = crypto.subtle();
 
-        let key_usages = ["encrypt", "decrypt"];
-        let key_usages = key_usages
-            .into_iter()
-            .map(JsString::from)
-            .collect::<Array>();
+        let base_key_js = {
+            let key_usages = ["deriveKey"]
+                .into_iter()
+                .map(JsString::from)
+                .collect::<Array>();
 
-        let key_result = subtle.import_key_with_str(
-            "raw",
-            &Uint8Array::from(&key[..]),
-            "AES-GCM",
-            false,
-            &key_usages,
-        );
-        let key_future = JsFuture::from(
-            key_result.expect("provided valid parameters to SubtleCrypto.importKey"),
-        );
+            let key_result = subtle
+                .import_key_with_str(
+                    "raw",
+                    &Uint8Array::from(&base_key.bytes()[..]),
+                    "HKDF",
+                    false,
+                    &key_usages,
+                )
+                .expect("provided valid parameters to SubtleCrypto.importKey");
 
-        let key = key_future
-            .await
-            .expect("SubtleCrypto.importKey promise returns a value")
-            .dyn_into::<CryptoKey>()
-            .expect("SubtleCrypto.importKey promise returns a CryptoKey");
+            JsFuture::from(key_result)
+                .await
+                .expect("SubtleCrypto.importKey promise returns a value")
+                .dyn_into::<CryptoKey>()
+                .expect("SubtleCrypto.importKey promise returns a CryptoKey")
+        };
 
-        Self { subtle, key }
+        let derived_key = {
+            let salt = Uint8Array::new_with_length(0);
+            let algorithm = HkdfParams::new(
+                "HKDF",
+                &JsString::from("SHA-256"),
+                &Uint8Array::from(hkdf_info),
+                &salt,
+            );
+
+            let key_usages = ["encrypt", "decrypt"]
+                .into_iter()
+                .map(JsString::from)
+                .collect::<Array>();
+
+            let key_size_bits = 8 * KEY_SIZE;
+            let derived_key_type = AesKeyGenParams::new(
+                "AES-GCM",
+                key_size_bits.try_into().expect("invalid key size"),
+            );
+
+            let key_result = subtle
+                .derive_key_with_object_and_object(
+                    &algorithm,
+                    &base_key_js,
+                    &derived_key_type,
+                    false,
+                    &key_usages,
+                )
+                .expect("provided valid parameters to SubtleCrypto.deriveKey");
+
+            JsFuture::from(key_result)
+                .await
+                .expect("SubtleCrypto.deriveKey promise returns a value")
+                .dyn_into::<CryptoKey>()
+                .expect("SubtleCrypto.deriveKey promise returns a CryptoKey")
+        };
+
+        Self { subtle, key: derived_key }
     }
 
     async fn encrypt(&self, mut plaintext_and_nonce: ContentCipherBuffer, aad: Vec<u8>) -> Vec<u8> {

@@ -49,7 +49,7 @@ impl std::fmt::Debug for CipherKey {
 
 #[async_trait::async_trait(?Send)]
 trait Cipher {
-    async fn new(key: &[u8; KEY_SIZE]) -> Self
+    async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self
     where
         Self: Sized;
     async fn encrypt(&self, nonce_and_plaintext: ContentCipherBuffer, aad: Vec<u8>) -> Vec<u8>;
@@ -99,24 +99,40 @@ impl ContentCipher {
         (NONCE_SIZE + TAG_SIZE) as u64
     }
 
-    async fn cipher(&self) -> impl Cipher {
-        DefaultCipher::new(self.cipher_key.bytes()).await
+    async fn derive_cipher(&self, info: &[u8]) -> impl Cipher {
+        DefaultCipher::derive_new(&self.cipher_key, info).await
+    }
+
+    pub async fn encrypt_content(&self, plaintext: ContentCipherBuffer) -> Vec<u8> {
+        self.encrypt(plaintext, b"content").await
+    }
+
+    pub async fn encrypt_metadata(&self, plaintext: ContentCipherBuffer) -> Vec<u8> {
+        self.encrypt(plaintext, b"metadata").await
     }
 
     // TODO: stream
-    pub async fn encrypt(&self, mut plaintext: ContentCipherBuffer) -> Vec<u8> {
+    async fn encrypt(&self, mut plaintext: ContentCipherBuffer, info: &[u8]) -> Vec<u8> {
         *plaintext.parts_mut().nonce = rand::random();
 
-        let cipher = self.cipher().await;
-        cipher.encrypt(plaintext, Vec::new()).await
+        let cipher = self.derive_cipher(info).await;
+        cipher.encrypt(plaintext, vec![]).await
     }
 
-    pub async fn decrypt(&self, nonce_and_ciphertext: Vec<u8>) -> Result<Bytes> {
+    pub async fn decrypt_content(&self, nonce_and_ciphertext: Vec<u8>) -> Result<Bytes> {
+        self.decrypt(nonce_and_ciphertext, b"content").await
+    }
+
+    pub async fn decrypt_metadata(&self, nonce_and_ciphertext: Vec<u8>) -> Result<Bytes> {
+        self.decrypt(nonce_and_ciphertext, b"metadata").await
+    }
+
+    async fn decrypt(&self, nonce_and_ciphertext: Vec<u8>, info: &[u8]) -> Result<Bytes> {
         let nonce_and_ciphertext =
             ContentCipherBuffer::from_nonce_and_ciphertext(nonce_and_ciphertext)?;
 
-        let cipher = self.cipher().await;
-        cipher.decrypt(nonce_and_ciphertext, Vec::new()).await
+        let cipher = self.derive_cipher(info).await;
+        cipher.decrypt(nonce_and_ciphertext, vec![]).await
     }
 }
 
