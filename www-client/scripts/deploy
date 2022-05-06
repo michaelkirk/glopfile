@@ -4,7 +4,7 @@ set -e
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd $REPO_ROOT
 
-DEPLOY_NAME="$(date -u  +"%Y-%d-%m-%H:%M:%S")-$(git rev-parse --short HEAD)"
+DEPLOY_NAME="$(date -u  +"%Y-%m-%d-%H:%M:%S")-$(git rev-parse --short HEAD)"
 
 #DESTINATION=sendoftheworld@s.endoftheworl.de:/var/www/s.endoftheworl.de
 HOST=sendoftheworld@s.endoftheworl.de
