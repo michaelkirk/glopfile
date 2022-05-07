@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Arc};
 
 use crossbeam_utils::atomic::AtomicCell;
-use sendfile::UploaderClient;
+use sendfile::{UploaderClient, Transport};
 use url::Url;
 
 use crate::logger;
@@ -35,7 +35,7 @@ impl FileUploader {
         logger::set_logger();
         let api_endpoint = Url::parse(api_endpoint)?;
         let download_endpoint = Url::parse(download_endpoint)?;
-        let client = Arc::new(UploaderClient::new(api_endpoint, download_endpoint));
+        let client = Arc::new(UploaderClient::new(api_endpoint, download_endpoint, Transport::Both));
         Ok(Self { client })
     }
 
@@ -55,7 +55,7 @@ impl FileUploader {
             url,
             upload: Box::new(move || {
                 if let Some(provisioned_file) = provisioned_file.take() {
-                    client.upload_provisioned_file(provisioned_file)?;
+                    client.upload_provisioned_file(provisioned_file, |_| {})?;
                 }
                 Ok(())
             }),
