@@ -17,6 +17,8 @@ pub enum Error {
         status: u16,
         retry_after: Option<Duration>,
     },
+    #[error("API error: {reason}")]
+    ClientApiErrorResponse { reason: String },
     #[error("WebSocket closed with status {status}: {reason}")]
     WebSocketClosed {
         status: WebSocketCloseStatus,

@@ -160,9 +160,23 @@ impl ApiClient {
                         // fall through and retry
                     }
                 } else {
-                    break response
-                        .ok_or_retriable_err("failed to upload content")
-                        .map(drop);
+                    let response = response
+                        .ok_or_retriable_err("failed to upload content")?;
+                    let response_bytes = response.bytes().await.as_retriable_result()?;
+
+                    let response_status: UploadResponse =
+                        serde_json::from_slice(&response_bytes).map_err(|error| {
+                            error!("invalid server upload response: {}", error);
+                            backoff::Error::permanent(Error::InvalidServerResponse(
+                                "Invalid upload response",
+                            ))
+                        })?;
+
+                    match response_status {
+                        UploadResponse::Error { reason } =>
+                            return Err(backoff::Error::permanent(Error::ClientApiErrorResponse { reason })),
+                        UploadResponse::Ok => break Ok(()),
+                    }
                 }
             }
         })
@@ -405,6 +419,13 @@ impl DownloadId {
 pub(crate) struct ProvisionFileResponse {
     pub(crate) upload_url: String,
     pub(crate) download_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub(crate) enum UploadResponse {
+    Ok,
+    Error { reason: String },
 }
 
 #[derive(Debug, Deserialize)]

@@ -9,6 +9,12 @@ pub struct HTTPErrorResponseError {
 }
 
 #[typescript_error]
+pub struct ApiErrorResponseError {
+    #[typescript_type = "string"]
+    pub reason: String,
+}
+
+#[typescript_error]
 pub struct WebSocketClosedError {
     #[typescript_type = "number"]
     pub status: u16,
@@ -50,6 +56,9 @@ impl From<Error> for js_sys::Error {
         match from {
             Error::ClientHttpErrorResponse { status, .. } => {
                 HTTPErrorResponseError::new(&message, status).into()
+            }
+            Error::ClientApiErrorResponse { reason, .. } => {
+                ApiErrorResponseError::new(&message, reason).into()
             }
             Error::WebSocketClosed { status, .. } => {
                 WebSocketClosedError::new(&message, status.into()).into()
