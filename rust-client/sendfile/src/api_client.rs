@@ -17,7 +17,7 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
-use crate::error::{AsRetriableResultExt, IntoRetriableResultExt};
+use crate::error::{AsRetriableResultExt, IntoResultExt, IntoRetriableResultExt};
 use crate::util::{retry, ProgressState, TimeoutExt, TimeoutResult};
 use crate::websocket::{WebSocketClient, WebSocketMessage};
 use crate::{Error, Result};
@@ -99,6 +99,14 @@ impl ApiClient {
 
     pub async fn upload_file(&self, file: EncryptedFile, upload_path: &str) -> Result<()> {
         let url = self.endpoint.join(upload_path).expect("bad endpoint?");
+        let start_url = {
+            let mut start_url = url.clone();
+            start_url
+                .path_segments_mut()
+                .map_err(|_| Error::InvalidInput("bad upload url"))?
+                .push("start");
+            start_url
+        };
         let file_size = file.encrypted_bytes.len();
         let last_position = file_size - 1;
 
@@ -111,6 +119,10 @@ impl ApiClient {
         retry(backoff, || async {
             loop {
                 let mut position = position_shared.load(Relaxed);
+
+                let start_form = [("position", position)];
+                let start_request = client.post(start_url.clone()).form(&start_form);
+
                 let send_bytes = file.encrypted_bytes.slice(position..);
                 let content_range = if position < file_size {
                     format!("bytes {position}-{last_position}/{file_size}")
@@ -119,11 +131,33 @@ impl ApiClient {
                 };
                 let request = client.post(url.clone()).body(send_bytes).header(header::CONTENT_RANGE, content_range);
 
-                // We can't have a request timeout here since we don't know whether the request has actually
-                // been accepted but we're just waiting to send data (or sending data just takes a long time).
-                // Upload request timeouts have to happen at a higher level, with help from feedback from the
-                // server via websocket.
-                let response = request.send().await.as_retriable_result()?;
+                // First ask the server if we can start uploading content from this position.
+                let response = match start_request.send().await.as_retriable_result()? {
+                    start_response if !start_response.status().is_success() => {
+                        // Fall through and handle this "start upload" error response in the same
+                        // way as we handle content upload errors.
+                        start_response
+                    }
+                    start_response => {
+                        let response_bytes = start_response.bytes().await.as_retriable_result()?;
+
+                        serde_json::from_slice::<UploadResponse>(&response_bytes).map_err(|error| {
+                            error!("invalid server start upload response: {}", error);
+                            backoff::Error::permanent(Error::InvalidServerResponse(
+                                "Invalid start upload response",
+                            ))
+                        })?.ok_or_retriable_err("failed to start upload")?;
+
+                        // Upload the file content.
+                        //
+                        // We can't have a request timeout here since we don't know whether the
+                        // request has actually been accepted but we're just waiting to send data
+                        // (or sending data just takes a long time). Upload request timeouts have to
+                        // happen at a higher level, with help from feedback from the server via
+                        // websocket.
+                        request.send().await.as_retriable_result()?
+                    }
+                };
 
                 if let StatusCode::CONFLICT = response.status() {
                     let response_bytes = response.bytes().await.as_retriable_result()?;
@@ -164,19 +198,13 @@ impl ApiClient {
                         .ok_or_retriable_err("failed to upload content")?;
                     let response_bytes = response.bytes().await.as_retriable_result()?;
 
-                    let response_status: UploadResponse =
-                        serde_json::from_slice(&response_bytes).map_err(|error| {
+                    serde_json::from_slice::<UploadResponse>(&response_bytes).map_err(|error| {
                             error!("invalid server upload response: {}", error);
                             backoff::Error::permanent(Error::InvalidServerResponse(
                                 "Invalid upload response",
                             ))
-                        })?;
-
-                    match response_status {
-                        UploadResponse::Error { reason } =>
-                            return Err(backoff::Error::permanent(Error::ClientApiErrorResponse { reason })),
-                        UploadResponse::Ok => break Ok(()),
-                    }
+                    })?.ok_or_retriable_err("failed to upload")?;
+                    break Ok(());
                 }
             }
         })
@@ -426,6 +454,16 @@ pub(crate) struct ProvisionFileResponse {
 pub(crate) enum UploadResponse {
     Ok,
     Error { reason: String },
+}
+
+impl IntoResultExt for UploadResponse {
+    type Output = ();
+    fn ok_or(self, message: &'static str) -> Result<Self::Output> {
+        match self {
+            Self::Ok => Ok(()),
+            Self::Error { reason } => Err(Error::ClientApiErrorResponse { message, reason }),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

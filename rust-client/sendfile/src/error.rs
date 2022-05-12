@@ -17,8 +17,11 @@ pub enum Error {
         status: u16,
         retry_after: Option<Duration>,
     },
-    #[error("API error: {reason}")]
-    ClientApiErrorResponse { reason: String },
+    #[error("API error: {reason} - {message}")]
+    ClientApiErrorResponse {
+        message: &'static str,
+        reason: String,
+    },
     #[error("WebSocket closed with status {status}: {reason}")]
     WebSocketClosed {
         status: WebSocketCloseStatus,
@@ -62,7 +65,8 @@ pub enum Error {
 }
 
 pub(crate) trait IntoResultExt: Sized {
-    fn ok_or(self, message: &'static str) -> Result<Self, Error>;
+    type Output;
+    fn ok_or(self, message: &'static str) -> Result<Self::Output, Error>;
 }
 
 pub(crate) trait IntoRetriableResultExt: Sized {
@@ -110,6 +114,7 @@ impl From<WebSocketError> for Error {
 }
 
 impl IntoResultExt for Response {
+    type Output = Self;
     fn ok_or(self, message: &'static str) -> Result<Response, Error> {
         match self.status() {
             status if status.is_success() => Ok(self),
@@ -123,8 +128,11 @@ impl IntoResultExt for Response {
 }
 
 impl<T: IntoResultExt> IntoRetriableResultExt for T {
-    type Output = Self;
-    fn ok_or_retriable_err(self, message: &'static str) -> Result<Self, backoff::Error<Error>> {
+    type Output = T::Output;
+    fn ok_or_retriable_err(
+        self,
+        message: &'static str,
+    ) -> Result<Self::Output, backoff::Error<Error>> {
         self.ok_or(message).as_retriable_result()
     }
 }
