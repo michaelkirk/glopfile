@@ -112,10 +112,12 @@ impl ApiClient {
             loop {
                 let mut position = position_shared.load(Relaxed);
                 let send_bytes = file.encrypted_bytes.slice(position..);
-                let request = client.post(url.clone()).body(send_bytes).header(
-                    header::CONTENT_RANGE,
-                    format!("bytes {position}-{last_position}/{file_size}"),
-                );
+                let content_range = if position < file_size {
+                    format!("bytes {position}-{last_position}/{file_size}")
+                } else {
+                    format!("bytes */{file_size}")
+                };
+                let request = client.post(url.clone()).body(send_bytes).header(header::CONTENT_RANGE, content_range);
 
                 // We can't have a request timeout here since we don't know whether the request has actually
                 // been accepted but we're just waiting to send data (or sending data just takes a long time).
@@ -135,9 +137,7 @@ impl ApiClient {
                     let old_position = position;
                     position = usize::try_from(conflict_response.position).expect("file fits in memory");
                     position_shared.store(position, Relaxed);
-                    if position == file_size {
-                        break Ok::<_, backoff::Error<Error>>(());
-                    } else if position > file_size {
+                    if position > file_size {
                         let error_message = format!(
                             "Downloader requested file position {position} \
                              which is greater than file size {file_size}.",
