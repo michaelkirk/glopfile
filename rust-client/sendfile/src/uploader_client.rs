@@ -1,3 +1,5 @@
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+mod ffi;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(target_arch = "wasm32")]
@@ -36,6 +38,11 @@ pub struct UploaderClient {
 #[async_trait::async_trait(?Send)]
 pub trait UploadableFile {
     async fn len(&self) -> io::Result<u64>;
+}
+
+#[async_trait::async_trait(?Send)]
+pub trait TryClone: Sized {
+    async fn try_clone(&self) -> Result<Self>;
 }
 
 impl UploaderClient {
@@ -286,6 +293,26 @@ impl<F> ProvisionedFile<F> {
         self.file_size
     }
 }
+
+#[async_trait::async_trait(?Send)]
+impl<F: TryClone> TryClone for ProvisionedFile<F> {
+    async fn try_clone(&self) -> Result<Self> {
+        let file = self.file.try_clone().await?;
+        Ok(Self {
+            file,
+            file_size: self.file_size,
+            upload_path: self.upload_path.clone(),
+            download_url_without_cipher_key: self.download_url_without_cipher_key.clone(),
+            cipher_key: self.cipher_key.clone(),
+        })
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::NativeUploadFile;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::NativeProvisionedFile;
 
 #[derive(Clone)]
 struct UploadState {

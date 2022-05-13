@@ -1,3 +1,6 @@
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+mod ffi;
+
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;

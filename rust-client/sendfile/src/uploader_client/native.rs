@@ -6,7 +6,7 @@ use futures::{pin_mut, AsyncRead, TryStreamExt};
 use tokio::fs::File;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
-use super::{ProvisionedFile, UploadableFile, UploaderClient};
+use super::{ProvisionedFile, TryClone, UploadableFile, UploaderClient};
 use crate::{Error, ProgressState, Result};
 
 pub struct NativeUploadFile {
@@ -52,6 +52,15 @@ impl UploaderClient {
     }
 }
 
+impl<F: TryClone> ProvisionedFile<F> {
+    pub fn try_clone(&self) -> Result<Self> {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(TryClone::try_clone(self))
+    }
+}
+
 impl AsyncRead for NativeUploadFile {
     fn poll_read(
         mut self: Pin<&mut Self>,
@@ -74,6 +83,14 @@ impl AsyncRead for NativeUploadFile {
 impl UploadableFile for NativeUploadFile {
     async fn len(&self) -> io::Result<u64> {
         Ok(self.file.get_ref().metadata().await?.len())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl TryClone for NativeUploadFile {
+    async fn try_clone(&self) -> Result<Self> {
+        let file = self.file.get_ref().try_clone().await?.compat();
+        Ok(Self { file })
     }
 }
 

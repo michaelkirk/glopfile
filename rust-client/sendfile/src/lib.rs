@@ -22,13 +22,29 @@ mod url_safe_base64;
 mod util;
 mod websocket;
 
-pub use api_client::DownloadId;
+pub use api_client::{DownloadId, DownloadMeta, FileMeta};
 pub use downloader_client::DownloaderClient;
 pub use error::Error;
 pub use transport::Transport;
 pub use uploader_client::{ProvisionedFile, UploadableFile, UploaderClient};
 pub use util::ProgressState;
 pub type Result<T> = std::result::Result<T, Error>;
+
+cfg_if::cfg_if! {
+    if #[cfg(not(target_arch = "wasm32"))] {
+        pub use uploader_client::{NativeUploadFile, NativeProvisionedFile};
+    }
+}
+
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+pub mod ffi {
+    use crate::{
+        DownloadMeta, DownloaderClient, Error as SendfileError, FileMeta, NativeProvisionedFile,
+        Transport, UploaderClient,
+    };
+
+    include!(concat!(env!("OUT_DIR"), "/lib.uniffi.rs"));
+}
 
 use api_client::ApiClient;
 use cipher::CipherKey;

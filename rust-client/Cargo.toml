@@ -1,5 +1,5 @@
 [workspace]
-members = ["cli", "macros", "sendfile"]
+members = ["cli", "macros", "sendfile", "sendfile-ffi-bindings"]
 
 # Only use the strip option for sendfile-cli, since it is only stable since Cargo 1.59.0, and Cargo before that will
 # then fail to compile _any_ of our workspace packages with any profile if we specify it globally.
