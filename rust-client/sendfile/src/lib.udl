@@ -47,7 +47,7 @@ interface DownloaderClient {
   DownloadMeta fetch_meta_ffi();
 
   [Throws=SendfileError]
-  void download_ffi([ByRef] DownloadMeta meta, duration? p2p_timeout);
+  void download_ffi([ByRef] DownloadMeta meta, string? output_dir, duration? p2p_timeout);
 };
 
 interface DownloadMeta {

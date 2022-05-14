@@ -24,9 +24,11 @@ impl DownloaderClient {
             .build()?
             .block_on(self.fetch_meta_async())
     }
+
     pub fn download<F: FnMut(ProgressState<u64>)>(
         &self,
         meta: &DownloadMeta,
+        output_dir: Option<PathBuf>,
         p2p_timeout: Option<Duration>,
         mut progress_fun: F,
     ) -> Result<()> {
@@ -34,7 +36,7 @@ impl DownloaderClient {
             .enable_all()
             .build()?
             .block_on(async {
-                let file = DownloadFile::new(meta, self.output_dir.as_deref()).await?;
+                let file = DownloadFile::new(meta, output_dir.as_deref()).await?;
                 let decrypted_file = self.api_client.decrypt_file(meta, file);
                 let download_progress = self.download_async(meta, decrypted_file, p2p_timeout);
                 pin_mut!(download_progress);

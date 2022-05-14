@@ -7,9 +7,6 @@ mod web;
 
 use std::ops::ControlFlow;
 use std::ops::ControlFlow::{Break, Continue};
-#[cfg(test)]
-use std::path::Path;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -32,8 +29,6 @@ use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 pub struct DownloaderClient {
     api_client: ApiClient,
     download_id: DownloadId,
-    #[cfg_attr(target_arch = "wasm32", allow(unused))]
-    output_dir: Option<PathBuf>,
     transport: Transport,
 }
 
@@ -49,7 +44,7 @@ impl DownloaderClient {
         let (download_id, cipher_key) = Self::parse_download_url(download_url_str)?;
 
         let api_client = ApiClient::new(api_endpoint, cipher_key);
-        Ok(Self { api_client, download_id, output_dir: None, transport })
+        Ok(Self { api_client, download_id, transport })
     }
 
     #[cfg(test)]
@@ -59,11 +54,6 @@ impl DownloaderClient {
             .parse()
             .expect("invalid hardcoded url");
         Self::from_download_url(download_url_str, api_endpoint, transport)
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_output_dir(&mut self, path: &Path) {
-        self.output_dir = Some(path.into());
     }
 
     async fn fetch_meta_async(&self) -> Result<DownloadMeta> {

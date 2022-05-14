@@ -85,13 +85,14 @@ mod tests {
             debug!("uploader did upload");
         });
 
-        let mut downloader =
+        let downloader =
             DownloaderClient::from_testing_download_url(&download_url, Transport::Relay).unwrap();
         let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
-        downloader.set_output_dir(&output_dir);
         debug!("downloader will download");
         let meta = downloader.fetch_meta().unwrap();
-        downloader.download(&meta, None, drop).unwrap();
+        downloader
+            .download(&meta, Some(output_dir.clone()), None, drop)
+            .unwrap();
         debug!("downloader did download");
 
         uploader_handler.join().unwrap();
@@ -124,13 +125,17 @@ mod tests {
         });
 
         let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
-        let mut downloader =
+        let downloader =
             DownloaderClient::from_testing_download_url(&download_url, Transport::P2P).unwrap();
-        downloader.set_output_dir(&output_dir);
         debug!("downloader will download");
         let meta = downloader.fetch_meta().unwrap();
         downloader
-            .download(&meta, Some(Duration::from_secs(15)), drop)
+            .download(
+                &meta,
+                Some(output_dir.clone()),
+                Some(Duration::from_secs(15)),
+                drop,
+            )
             .unwrap();
         debug!("downloader did download");
 

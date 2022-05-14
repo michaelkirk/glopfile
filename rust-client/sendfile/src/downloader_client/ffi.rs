@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,8 +27,10 @@ impl DownloaderClient {
     pub(crate) fn download_ffi(
         &self,
         meta: &DownloadMeta,
+        output_dir: Option<String>,
         p2p_timeout: Option<Duration>,
     ) -> Result<()> {
-        self.download(meta, p2p_timeout, drop)
+        let output_dir = output_dir.map(PathBuf::from);
+        self.download(meta, output_dir, p2p_timeout, drop)
     }
 }

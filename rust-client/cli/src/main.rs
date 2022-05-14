@@ -233,7 +233,7 @@ impl Cli {
             });
 
             let download_result =
-                downloader_client.download(&meta, Some(Duration::from_secs(5)), |progress| {
+                downloader_client.download(&meta, None, Some(Duration::from_secs(5)), |progress| {
                     progress_tx
                         .send(progress)
                         .expect("progress thread is running");
