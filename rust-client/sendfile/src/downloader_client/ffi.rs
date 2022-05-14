@@ -19,6 +19,10 @@ impl DownloaderClient {
         Ok(client)
     }
 
+    pub(crate) fn download_id_ffi(&self) -> String {
+        self.download_id().to_string()
+    }
+
     pub(crate) fn fetch_meta_ffi(&self) -> Result<Arc<DownloadMeta>> {
         let meta = self.fetch_meta()?;
         Ok(meta.into())

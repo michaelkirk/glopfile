@@ -56,6 +56,10 @@ impl DownloaderClient {
         Self::from_download_url(download_url_str, api_endpoint, transport)
     }
 
+    pub fn download_id(&self) -> &DownloadId {
+        &self.download_id
+    }
+
     async fn fetch_meta_async(&self) -> Result<DownloadMeta> {
         self.api_client.fetch_meta(&self.download_id).await
     }

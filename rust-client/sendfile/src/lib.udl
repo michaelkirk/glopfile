@@ -43,6 +43,8 @@ interface DownloaderClient {
   [Name=from_download_url_ffi, Throws=SendfileError]
   constructor([ByRef] string download_url, [ByRef] string api_endpoint, Transport transport);
 
+  string download_id_ffi();
+
   [Throws=SendfileError]
   DownloadMeta fetch_meta_ffi();
 
