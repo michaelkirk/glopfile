@@ -1421,7 +1421,7 @@ checksum = "d65bd28f48be7196d222d95b9243287f48d27aca604e08497513019ff0502cc4"
 [[package]]
 name = "sendfile"
 version = "0.1.0"
-source = "git+ssh://github.com/privacyresearchgroup/sendfile-cli.git?branch=master#93a6abd09154866aa8c5b4b83c89c747b40d4485"
+source = "git+ssh://github.com/privacyresearchgroup/sendfile-cli.git?branch=master#bdd255167ddf736a65703eb21c579fbae8e5255b"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -1467,7 +1467,7 @@ dependencies = [
 [[package]]
 name = "sendfile-macros"
 version = "0.1.0"
-source = "git+ssh://github.com/privacyresearchgroup/sendfile-cli.git?branch=master#93a6abd09154866aa8c5b4b83c89c747b40d4485"
+source = "git+ssh://github.com/privacyresearchgroup/sendfile-cli.git?branch=master#bdd255167ddf736a65703eb21c579fbae8e5255b"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",

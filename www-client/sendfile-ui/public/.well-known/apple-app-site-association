@@ -1,0 +1,23 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "KP8CN24X7U.org.privacyresearchgroup.sendfile-ios-app",
+          "KP8CN24X7U.org.privacyresearchgroup.sendfile-ios-app-dev"
+        ],
+        "components": [
+          {
+            "#": "no_universal_links",
+            "exclude": true,
+            "comment": "Matches any URL whose fragment equals no_universal_links and instructs the system not to open it as a universal link"
+          },
+          {
+            "/": "/download/*",
+            "comment": "Matches any URL whose path starts with /download/"
+          }
+        ]
+      }
+    ]
+  }
+}

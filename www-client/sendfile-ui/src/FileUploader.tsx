@@ -1,6 +1,7 @@
 import React from "react";
 import FileUpload from "./FileUpload";
 import toast, { Toaster } from "react-hot-toast";
+import { QRCodeSVG } from "qrcode.react";
 
 class FileUploaderProps {
   fileUpload: FileUpload;
@@ -42,6 +43,9 @@ class FileUploader extends React.Component<FileUploaderProps, {}> {
             </a>
             ]
             <Toaster containerStyle={{ position: "relative" }} />
+          </p>
+          <p className="FileUploader-QR">
+            <QRCodeSVG value={this.downloadURLWithCipherKey()} includeMargin />
           </p>
         </div>
       );

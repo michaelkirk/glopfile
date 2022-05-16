@@ -28,6 +28,16 @@ body {
   margin-top: 16px;
 }
 
+.FileUploader-QR {
+    text-align: center;
+}
+
+.FileUploader-QR svg {
+    width: 100%;
+    max-width: 400px;
+    height: auto;
+}
+
 .nav a,
 .nav a:visited {
   color: #ddd;
