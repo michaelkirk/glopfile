@@ -145,7 +145,7 @@ rust-acknowledgements: $(resdir)/Settings.bundle/RustAcknowledgements.plist
 
 $(resdir)/Settings.bundle/RustAcknowledgements.plist: $(resdir)/RustAcknowledgements.plist.hbs Cargo.lock
 	if [ "`shasum $^`" != "`cat $(resdir)/RustAcknowledgements.inputs.shasum`" ]; then \
-		which cargo-about >/dev/null 2>/dev/null || $(CARGO) install cargo-about; \
+		cargo about --help >/dev/null 2>/dev/null || $(CARGO) install cargo-about; \
 		$(CARGO) about generate $< > $@; \
 		shasum $^ > $(resdir)/RustAcknowledgements.inputs.shasum; \
 	else \
