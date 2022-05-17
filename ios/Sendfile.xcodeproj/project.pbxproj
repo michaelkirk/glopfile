@@ -7,9 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C8073D7D28342EF300A1B12F /* DocumentViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8073D7C28342EF300A1B12F /* DocumentViewer.swift */; };
+		C8073D802834507D00A1B12F /* SendfileRustFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8073D7F2834507D00A1B12F /* SendfileRustFFI.swift */; };
+		C82B9AB1282ADD450025C712 /* FileDownloadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82B9AB0282ADD450025C712 /* FileDownloadModel.swift */; };
+		C82B9AB3282ADDAE0025C712 /* FileDownloadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82B9AB2282ADDAE0025C712 /* FileDownloadView.swift */; };
 		C83E302427C5854400D5B4E8 /* libc++.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = C83E302327C5854400D5B4E8 /* libc++.tbd */; };
 		C87A469427BD4A9800C83DCE /* SendfileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C87A469327BD4A9800C83DCE /* SendfileApp.swift */; };
 		C87A469827BD4A9A00C83DCE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C87A469727BD4A9A00C83DCE /* Assets.xcassets */; };
+		C88AE433282F0FCB0044A4C4 /* SendfileAppRust.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88AE431282F0FCB0044A4C4 /* SendfileAppRust.swift */; };
+		C88AE436282F102E0044A4C4 /* SendfileLibRust.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88AE434282F102E0044A4C4 /* SendfileLibRust.swift */; };
+		C88AE43A282F17AC0044A4C4 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88AE439282F17AC0044A4C4 /* Constants.swift */; };
+		C88AE43D282F249F0044A4C4 /* AppFilesystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = C88AE43C282F249F0044A4C4 /* AppFilesystem.swift */; };
 		C8A9FB6827BD5194008FAF28 /* AppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6727BD5194008FAF28 /* AppView.swift */; };
 		C8A9FB6C27BD51F9008FAF28 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6B27BD51F9008FAF28 /* AppEnvironment.swift */; };
 		C8A9FB6E27BD5233008FAF28 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB6D27BD5233008FAF28 /* AppPreferences.swift */; };
@@ -17,14 +25,25 @@
 		C8A9FB8127BD8293008FAF28 /* DocumentPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB8027BD8293008FAF28 /* DocumentPicker.swift */; };
 		C8A9FB8427BD922A008FAF28 /* FileUploadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB8327BD922A008FAF28 /* FileUploadModel.swift */; };
 		C8A9FB8627BD938A008FAF28 /* FileUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8A9FB8527BD938A008FAF28 /* FileUploadView.swift */; };
-		C8D86E1627BE364700947CED /* SendfileRust.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D86E1527BE364700947CED /* SendfileRust.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		C8073D7C28342EF300A1B12F /* DocumentViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewer.swift; sourceTree = "<group>"; };
+		C8073D7E2834505D00A1B12F /* SendfileRustFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SendfileRustFFI.h; sourceTree = "<group>"; };
+		C8073D7F2834507D00A1B12F /* SendfileRustFFI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendfileRustFFI.swift; sourceTree = "<group>"; };
+		C82B9AB0282ADD450025C712 /* FileDownloadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDownloadModel.swift; sourceTree = "<group>"; };
+		C82B9AB2282ADDAE0025C712 /* FileDownloadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileDownloadView.swift; sourceTree = "<group>"; };
+		C82B9AB4282B11880025C712 /* Sendfile App Store Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Sendfile App Store Release.entitlements"; sourceTree = "<group>"; };
 		C83E302327C5854400D5B4E8 /* libc++.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = "libc++.tbd"; path = "usr/lib/libc++.tbd"; sourceTree = SDKROOT; };
 		C87A469027BD4A9800C83DCE /* Sendfile.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sendfile.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C87A469327BD4A9800C83DCE /* SendfileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SendfileApp.swift; sourceTree = "<group>"; };
 		C87A469727BD4A9A00C83DCE /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C88AE431282F0FCB0044A4C4 /* SendfileAppRust.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SendfileAppRust.swift; sourceTree = "<group>"; };
+		C88AE432282F0FCB0044A4C4 /* SendfileAppRustFFI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SendfileAppRustFFI.h; sourceTree = "<group>"; };
+		C88AE434282F102E0044A4C4 /* SendfileLibRust.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SendfileLibRust.swift; sourceTree = "<group>"; };
+		C88AE435282F102E0044A4C4 /* SendfileLibRustFFI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SendfileLibRustFFI.h; sourceTree = "<group>"; };
+		C88AE439282F17AC0044A4C4 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		C88AE43C282F249F0044A4C4 /* AppFilesystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFilesystem.swift; sourceTree = "<group>"; };
 		C8A9FB6727BD5194008FAF28 /* AppView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppView.swift; sourceTree = "<group>"; };
 		C8A9FB6B27BD51F9008FAF28 /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		C8A9FB6D27BD5233008FAF28 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
@@ -33,8 +52,7 @@
 		C8A9FB8027BD8293008FAF28 /* DocumentPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPicker.swift; sourceTree = "<group>"; };
 		C8A9FB8327BD922A008FAF28 /* FileUploadModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadModel.swift; sourceTree = "<group>"; };
 		C8A9FB8527BD938A008FAF28 /* FileUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileUploadView.swift; sourceTree = "<group>"; };
-		C8D86E1527BE364700947CED /* SendfileRust.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SendfileRust.swift; sourceTree = "<group>"; };
-		C8D86E1827BE37A500947CED /* SendfileRustFFI.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SendfileRustFFI.h; sourceTree = "<group>"; };
+		C8B54C502826C9CF00097B45 /* Sendfile Debug.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Sendfile Debug.entitlements"; sourceTree = "<group>"; };
 		C8D86E1927BE37A500947CED /* module.modulemap */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -78,6 +96,8 @@
 		C87A469227BD4A9800C83DCE /* Sendfile */ = {
 			isa = PBXGroup;
 			children = (
+				C82B9AB4282B11880025C712 /* Sendfile App Store Release.entitlements */,
+				C8B54C502826C9CF00097B45 /* Sendfile Debug.entitlements */,
 				C8A9FB7827BD58F6008FAF28 /* res */,
 				C8A9FB5F27BD500E008FAF28 /* src */,
 				C87A469727BD4A9A00C83DCE /* Assets.xcassets */,
@@ -86,13 +106,23 @@
 			path = Sendfile;
 			sourceTree = "<group>";
 		};
+		C88AE43B282F248A0044A4C4 /* Utilities */ = {
+			isa = PBXGroup;
+			children = (
+				C88AE43C282F249F0044A4C4 /* AppFilesystem.swift */,
+			);
+			path = Utilities;
+			sourceTree = "<group>";
+		};
 		C8A9FB5F27BD500E008FAF28 /* src */ = {
 			isa = PBXGroup;
 			children = (
+				C88AE43B282F248A0044A4C4 /* Utilities */,
 				C8A9FB6927BD51E6008FAF28 /* Environment */,
 				C8A9FB6027BD5026008FAF28 /* FFI */,
 				C8A9FB6527BD5168008FAF28 /* UI */,
 				C87A469327BD4A9800C83DCE /* SendfileApp.swift */,
+				C88AE439282F17AC0044A4C4 /* Constants.swift */,
 			);
 			path = src;
 			sourceTree = "<group>";
@@ -120,6 +150,7 @@
 				C8A9FB7F27BD8287008FAF28 /* Controls */,
 				C8A9FB6727BD5194008FAF28 /* AppView.swift */,
 				C8A9FB8527BD938A008FAF28 /* FileUploadView.swift */,
+				C82B9AB2282ADDAE0025C712 /* FileDownloadView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -145,6 +176,7 @@
 			isa = PBXGroup;
 			children = (
 				C8A9FB8027BD8293008FAF28 /* DocumentPicker.swift */,
+				C8073D7C28342EF300A1B12F /* DocumentViewer.swift */,
 			);
 			path = Controls;
 			sourceTree = "<group>";
@@ -153,6 +185,7 @@
 			isa = PBXGroup;
 			children = (
 				C8A9FB8327BD922A008FAF28 /* FileUploadModel.swift */,
+				C82B9AB0282ADD450025C712 /* FileDownloadModel.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -168,8 +201,12 @@
 		C8D86E1727BE37A500947CED /* SendfileRustFFI */ = {
 			isa = PBXGroup;
 			children = (
-				C8D86E1527BE364700947CED /* SendfileRust.swift */,
-				C8D86E1827BE37A500947CED /* SendfileRustFFI.h */,
+				C88AE434282F102E0044A4C4 /* SendfileLibRust.swift */,
+				C88AE435282F102E0044A4C4 /* SendfileLibRustFFI.h */,
+				C88AE431282F0FCB0044A4C4 /* SendfileAppRust.swift */,
+				C88AE432282F0FCB0044A4C4 /* SendfileAppRustFFI.h */,
+				C8073D7E2834505D00A1B12F /* SendfileRustFFI.h */,
+				C8073D7F2834507D00A1B12F /* SendfileRustFFI.swift */,
 				C8D86E1927BE37A500947CED /* module.modulemap */,
 			);
 			path = SendfileRustFFI;
@@ -293,13 +330,20 @@
 			buildActionMask = 2147483647;
 			files = (
 				C8A9FB6E27BD5233008FAF28 /* AppPreferences.swift in Sources */,
+				C82B9AB1282ADD450025C712 /* FileDownloadModel.swift in Sources */,
+				C88AE43D282F249F0044A4C4 /* AppFilesystem.swift in Sources */,
 				C8A9FB8427BD922A008FAF28 /* FileUploadModel.swift in Sources */,
 				C87A469427BD4A9800C83DCE /* SendfileApp.swift in Sources */,
+				C88AE436282F102E0044A4C4 /* SendfileLibRust.swift in Sources */,
 				C8A9FB6C27BD51F9008FAF28 /* AppEnvironment.swift in Sources */,
+				C88AE43A282F17AC0044A4C4 /* Constants.swift in Sources */,
 				C8A9FB8127BD8293008FAF28 /* DocumentPicker.swift in Sources */,
-				C8D86E1627BE364700947CED /* SendfileRust.swift in Sources */,
+				C88AE433282F0FCB0044A4C4 /* SendfileAppRust.swift in Sources */,
 				C8A9FB6827BD5194008FAF28 /* AppView.swift in Sources */,
+				C8073D7D28342EF300A1B12F /* DocumentViewer.swift in Sources */,
+				C82B9AB3282ADDAE0025C712 /* FileDownloadView.swift in Sources */,
 				C8A9FB8627BD938A008FAF28 /* FileUploadView.swift in Sources */,
+				C8073D802834507D00A1B12F /* SendfileRustFFI.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -482,9 +526,10 @@
 				CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES;
+				CODE_SIGN_ENTITLEMENTS = "Sendfile/Sendfile Debug.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1.0.0.3;
-				DEVELOPMENT_TEAM = MNTZKMS8Z9;
+				DEVELOPMENT_TEAM = KP8CN24X7U;
 				ENABLE_PREVIEWS = NO;
 				GCC_STRICT_ALIASING = NO;
 				INFOPLIST_FILE = Sendfile/Info.plist;
@@ -499,7 +544,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "org.glopfile.Sendfile-iOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "org.privacyresearchgroup.sendfile-ios-app-dev";
 				PRODUCT_NAME = Sendfile;
 				RUN_CLANG_STATIC_ANALYZER = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -515,6 +560,7 @@
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_ANALYZER_SECURITY_INSECUREAPI_RAND = YES;
 				CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES;
+				CODE_SIGN_ENTITLEMENTS = "Sendfile/Sendfile App Store Release.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Distribution";
 				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1.0.0.3;
@@ -631,9 +677,10 @@
 				CLANG_ANALYZER_SECURITY_FLOATLOOPCOUNTER = YES;
 				CLANG_ANALYZER_SECURITY_INSECUREAPI_RAND = YES;
 				CLANG_ANALYZER_SECURITY_INSECUREAPI_STRCPY = YES;
+				CODE_SIGN_ENTITLEMENTS = "Sendfile/Sendfile Debug.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1.0.0.3;
-				DEVELOPMENT_TEAM = MNTZKMS8Z9;
+				DEVELOPMENT_TEAM = KP8CN24X7U;
 				ENABLE_PREVIEWS = NO;
 				GCC_STRICT_ALIASING = NO;
 				INFOPLIST_FILE = Sendfile/Info.plist;
@@ -648,7 +695,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "org.glopfile.Sendfile-iOS";
+				PRODUCT_BUNDLE_IDENTIFIER = "org.privacyresearchgroup.sendfile-ios-app-dev";
 				PRODUCT_NAME = Sendfile;
 				RUN_CLANG_STATIC_ANALYZER = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

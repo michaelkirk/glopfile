@@ -19,6 +19,9 @@ struct DocumentPicker: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ picker: UIDocumentPickerViewController, context: Context) {
+        if !isPresented {
+            picker.dismiss(animated: true)
+        }
     }
 
     func makeCoordinator() -> Coordinator {

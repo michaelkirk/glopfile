@@ -1,21 +1,18 @@
 [package]
 name    = "sendfile-ios-rust"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 
 [lib]
 name = "sendfile_ios_rust"
 crate_type = ["staticlib"]
 
 [dependencies]
-anyhow = "1.0.53"
-crossbeam-utils = "0.8.7"
 log = "0.4.14"
-sendfile = { git = "ssh://git@github.com/privacyresearchgroup/sendfile-cli.git", branch = "master" }
-thiserror = "1.0.30"
-uniffi = "0.17.0"
-url = "2.2.2"
+sendfile = { git = "ssh://git@github.com/privacyresearchgroup/sendfile-cli.git", branch = "master", features = ["ffi"] }
+uniffi = "0.18.0"
 
 [build-dependencies]
-uniffi_build = { version = "0.17.0", features = ["builtin-bindgen"] }
-uniffi_bindgen = "0.17.0"
+sendfile-ffi-bindings = { git = "ssh://git@github.com/privacyresearchgroup/sendfile-cli.git", branch = "master" }
+uniffi_build = { version = "0.18.0", features = ["builtin-bindgen"] }
+uniffi_bindgen = "0.18.0"

@@ -3,86 +3,142 @@ import Combine
 import os
 import SendfileRustFFI
 
-enum FileUploadModelError: Error {
-    case access
-}
-
-enum FileUploadResult {
-    case success
-    case error(String)
-}
-
 class FileUploadModel: ObservableObject {
-    let fileUrl: URL
+    @Published var state: State = .idle
+    @Published var pending: PendingFileUpload?
 
-    @Published var lastResult: FileUploadResult?
+    enum State {
+        case idle
+        case started(URL)
+        case success
+        case error(Error)
+    }
 
-    private let fileUploader: FileUploader
-    @Published private var fileUpload: FileUpload?
     private let dispatchQueue = DispatchQueue(label: "FileUploadModel", attributes: .concurrent, target: .global(qos: .userInitiated))
 
-    init(fileUrl: URL) throws {
-        self.fileUrl = fileUrl
-        if !fileUrl.startAccessingSecurityScopedResource() {
-            throw FileUploadModelError.access
-        }
-        fileUploader = try FileUploader(apiEndpoint: "https://sendfile.jessa0.com/", downloadEndpoint: "https://s.endoftheworl.de/")
-    }
-
-    var provisionedUrl: URL? {
-        fileUpload
-            .flatMap { upload in upload.url() }
-            .flatMap { url in URL(string: url) }
-    }
-
-    func start() {
+    func start(fileUrl: URL) {
         dispatchPrecondition(condition: .onQueue(DispatchQueue.main))
-        let existingFileUpload = self.fileUpload
+
+        var existingPending: PendingFileUpload?
+        if let pending = pending, pending.fileUrl == fileUrl {
+            existingPending = pending
+        }
+
+        state = .started(fileUrl)
+
         dispatchQueue.async {
-            let fileUpload: FileUpload
-            if let existingFileUpload = existingFileUpload {
-                fileUpload = existingFileUpload
-            } else {
+            var pending: PendingFileUpload
+            do {
                 do {
-                    fileUpload = try self.fileUploader.provisionFile(path: self.fileUrl.path)
-                    DispatchQueue.main.async {
-                        self.fileUpload = fileUpload
+                    if !fileUrl.startAccessingSecurityScopedResource() {
+                        throw FileUploadModelError.access
+                    }
+
+                    defer {
+                        fileUrl.stopAccessingSecurityScopedResource()
+                    }
+
+                    if let existingPending = existingPending {
+                        pending = existingPending
+                    } else {
+                        pending = try PendingFileUpload(fileUrl: fileUrl)
                     }
                 } catch let error {
-                    switch error {
-                    case FileUploadError.Sendfile(let error):
-                        os_log("error provisioning file: \(error)")
-                    default:
-                        os_log("error provisioning file: \(error.localizedDescription)")
-                    }
                     DispatchQueue.main.async {
-                        self.lastResult = .error(error.localizedDescription)
+                        self.state = .error(error)
+                        self.pending = nil
                     }
                     return
                 }
-            }
 
-            let result: FileUploadResult
-            do {
-                try fileUpload.upload()
-                result = .success
-            } catch let error {
-                switch error {
-                case FileUploadError.Sendfile(let error):
-                    os_log("error uploading file: \(error)")
-                    result = .error(error)
-                default:
-                    os_log("error uploading file: \(error.localizedDescription)")
-                    result = .error(error.localizedDescription)
+                let _ = try pending.provisionFile()
+                DispatchQueue.main.async {
+                    self.state = .started(fileUrl)
+                    self.pending = pending
                 }
-            }
-            DispatchQueue.main.async {
-                self.lastResult = result
+
+                try pending.transfer()
+
+                DispatchQueue.main.async {
+                    self.state = .success
+                    self.pending = pending
+                }
+            } catch let error {
+                DispatchQueue.main.async {
+                    self.state = .error(error)
+                    self.pending = pending
+                }
             }
         }
     }
+}
 
-    deinit {
-        fileUrl.stopAccessingSecurityScopedResource()
+struct PendingFileUpload {
+    let fileUrl: URL
+    let client: UploaderClient
+    var provisionedFile: NativeProvisionedFile?
+
+    fileprivate init(fileUrl: URL) throws {
+        self.fileUrl = fileUrl
+        do {
+            client = try UploaderClient.newFfi(
+                apiEndpoint: Constants.apiEndpoint,
+                downloadEndpoint: Constants.downloadEndpoint,
+                transport: .both
+            )
+        } catch let error {
+            throw FileUploadModelError.initialize(error)
+        }
+    }
+
+    fileprivate mutating func provisionFile() throws -> NativeProvisionedFile {
+        if let provisionedFile = provisionedFile {
+            return provisionedFile
+        }
+        do {
+            let provisionedFile = try client.provisionFileFfi(path: fileUrl.path)
+            self.provisionedFile = provisionedFile
+            return provisionedFile
+        } catch let error {
+            throw FileUploadModelError.provision(error)
+        }
+    }
+
+    fileprivate mutating func transfer() throws {
+        let provisionedFile = try provisionFile()
+        do {
+            try client.uploadProvisionedFileFfi(provisionedFile: provisionedFile)
+        } catch let error {
+            throw FileUploadModelError.upload(error)
+        }
+    }
+}
+
+enum FileUploadModelError: Error {
+    case access
+    case initialize(Error)
+    case provision(Error)
+    case upload(Error)
+
+    var localizedDescription: String {
+        switch (self) {
+        case .access: return message
+        case .initialize: return "Internal error starting upload: \(message)"
+        case .provision: return "Error starting upload: \(message)"
+        case .upload: return "Error uploading file: \(message)"
+        }
+    }
+
+    var message: String {
+        switch (self) {
+        case .access:
+            return "Cannot access file to upload."
+        case .initialize(let error), .provision(let error), .upload(let error):
+            if case let error as SendfileError = error {
+                return error.message
+            } else {
+                return error.localizedDescription
+            }
+        }
     }
 }

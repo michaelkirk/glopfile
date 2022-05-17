@@ -1,8 +1,8 @@
 mod logger;
 
-mod ffi {
-    use crate::uploader::{FileUpload, FileUploadError, FileUploader, NewFileUploaderError};
+pub mod ffi {
+    use crate::logger::set_logger as set_rust_logger;
     include!(concat!(env!("OUT_DIR"), "/lib.uniffi.rs"));
 }
 
-mod uploader;
+pub use sendfile::ffi::*;

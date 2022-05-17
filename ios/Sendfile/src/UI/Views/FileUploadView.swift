@@ -2,12 +2,14 @@ import Foundation
 import SwiftUI
 
 struct FileUploadView: View {
-    @StateObject var fileUpload: FileUploadModel
+    @Binding var fileUrl: URL?
+
+    @StateObject var fileUpload: FileUploadModel = FileUploadModel()
 
     var body: some View {
         ZStack(alignment: .center) {
             VStack {
-                if case .error(_) = fileUpload.lastResult {
+                if case .error(_) = fileUpload.state {
                     retryButton
                 }
                 uploadStatus
@@ -17,15 +19,20 @@ struct FileUploadView: View {
                 provisionedUrlButton
             }
         }
+        .onAppear {
+            if let fileUrl = fileUrl, case .idle = fileUpload.state {
+                fileUpload.start(fileUrl: fileUrl)
+            }
+        }
     }
 
     var provisionedUrlButton: some View {
         VStack {
-            if case .success = fileUpload.lastResult {
-            } else if let provisionedUrl = fileUpload.provisionedUrl {
+            if case .success = fileUpload.state {
+            } else if let provisionedUrl = fileUpload.pending?.provisionedFile?.formattedDownloadUrlAndKey() {
                 Text("Tap to copy to clipboard:")
                 Button(action: {
-                    UIPasteboard.general.url = provisionedUrl
+                    UIPasteboard.general.url = URL(string: provisionedUrl)!
                 }) {
                     Text("\(provisionedUrl)")
                 }
@@ -35,26 +42,32 @@ struct FileUploadView: View {
     }
 
     var retryButton: some View {
-        Button(action: {
-            fileUpload.start()
-        }) {
-            Text("Retry")
+        ZStack {
+            if let fileUrl = fileUrl {
+                Button(action: {
+                    fileUpload.start(fileUrl: fileUrl)
+                }) {
+                    Text("Retry")
+                }
+            }
         }
     }
 
     var uploadStatus: some View {
         VStack {
-            if let lastResult = fileUpload.lastResult {
-                switch lastResult {
-                case .success:
-                    Text("File sent!")
-                case .error(let lastError):
-                    Text("Error: \(lastError)")
+            switch fileUpload.state {
+            case .idle:
+                EmptyView()
+            case .started:
+                if fileUpload.pending == nil {
+                    Text("Provisioning...")
+                } else {
+                    Text("Uploading...")
                 }
-            } else if fileUpload.provisionedUrl == nil {
-                Text("Provisioning...")
-            } else {
-                Text("Uploading...")
+            case .success:
+                Text("File sent!")
+            case .error(let lastError):
+                Text("Error: \(lastError.localizedDescription)")
             }
         }
     }

@@ -4,5 +4,3 @@
 xcuserdata
 
 /target/
-/Sendfile/src/FFI/Rust/SendfileRustFFI/SendfileRust.swift
-/Sendfile/src/FFI/Rust/SendfileRustFFI/SendfileRustFFI.h

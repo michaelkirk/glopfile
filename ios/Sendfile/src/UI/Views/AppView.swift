@@ -6,19 +6,23 @@ import SendfileRustFFI
 struct AppView: View {
     @Environment(\.env) var env: AppEnvironment
 
+    @EnvironmentObject var sceneDelegate: SendfileSceneDelegate
+
     @State var uploadFileUrl: URL?
+    @State var downloadUrl: URL?
     @State var uploadFilePickerPresented = false
-    @State var fileUpload: FileUploadModel?
     @State var fileUploadViewIsActive = false
+    @State var fileDownloadViewIsActive = false
 
     var body: some View {
         NavigationView {
             ZStack {
                 uploadView
-                if let fileUpload = fileUpload {
-                    NavigationLink(destination: FileUploadView(fileUpload: fileUpload), isActive: $fileUploadViewIsActive) {
-                        EmptyView()
-                    }
+                NavigationLink(destination: FileUploadView(fileUrl: $uploadFileUrl), isActive: $fileUploadViewIsActive) {
+                    EmptyView()
+                }
+                NavigationLink(destination: FileDownloadView(url: $downloadUrl), isActive: $fileDownloadViewIsActive) {
+                    EmptyView()
                 }
             }
         }
@@ -29,24 +33,26 @@ struct AppView: View {
             uploadFileButton
         }
         .onChange(of: uploadFileUrl) { _ in
-            os_log("upload file url: \(uploadFileUrl?.absoluteString ?? "none")")
-            if let uploadFileUrl = uploadFileUrl {
-                do {
-                    let fileUpload = try FileUploadModel(fileUrl: uploadFileUrl)
-                    self.fileUpload = fileUpload
-                    fileUpload.start()
-                    fileUploadViewIsActive = true
-                } catch NewFileUploaderError.InvalidEndpoint(let error) {
-                    assertionFailure("invalid API endpoint: \(error)")
-                } catch let error {
-                    os_log("error starting file upload: \(error.localizedDescription)")
-                }
+            if let _ = uploadFileUrl {
+                fileUploadViewIsActive = true
             }
         }
         .onChange(of: fileUploadViewIsActive) { _ in
             if !fileUploadViewIsActive {
-                fileUpload = nil
                 uploadFileUrl = nil
+            }
+        }
+        .onOpenURL { url in
+            openUrl(url: url)
+        }
+        .onChange(of: sceneDelegate.openedUrl) { _ in
+            if let openedUrl = sceneDelegate.openedUrl {
+                openUrl(url: openedUrl)
+            }
+        }
+        .onChange(of: fileDownloadViewIsActive) { _ in
+            if !fileDownloadViewIsActive {
+                downloadUrl = nil
             }
         }
     }
@@ -65,5 +71,17 @@ struct AppView: View {
     var uploadFilePicker: some View {
         DocumentPicker(fileUrl: $uploadFileUrl, isPresented: $uploadFilePickerPresented)
             .ignoresSafeArea(.container, edges: .bottom)
+    }
+
+    func openUrl(url: URL) {
+        var censoredUrl = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let censoredFragment = censoredUrl?.fragment
+        censoredUrl?.fragment = censoredFragment?
+            .replacingOccurrences(of: "[^~]", with: "X", options: .regularExpression, range: nil)
+        os_log("opening url: \(censoredUrl?.string ?? "nil")")
+
+        downloadUrl = url
+        fileDownloadViewIsActive = true
+        uploadFilePickerPresented = false
     }
 }
