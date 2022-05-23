@@ -21,9 +21,9 @@ use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, TransferFinished,
     UploaderMessage,
 };
-use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler};
+use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
 use crate::util::{Progress, ProgressState};
-use crate::websocket::web_socket_message;
+use crate::websocket::{web_socket_message, WebSocketMessageHandler};
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
 pub struct DownloaderClient {
@@ -121,29 +121,17 @@ impl DownloaderClient {
         progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
     ) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
-        let signaling_message_handler = p2p_client.signaling_message_handler();
-        let websocket = self
+
+        let websocket_message_handler = DownloadWebSocketMessageHandler {
+            signaling_message_handler: p2p_client.signaling_message_handler(),
+        };
+
+        let websocket_client = self
             .api_client
-            .connect_download_websocket(&meta.encrypted_content_url, move |message| {
-                match message.inner {
-                    Some(web_socket_message::Inner::RtcSignaling(message)) => {
-                        signaling_message_handler
-                            .handle(message)
-                            .map(Continue)
-                            .unwrap_or(Break(()))
-                    }
-                    Some(message @ web_socket_message::Inner::UploadDataAck(_)) => {
-                        warn!("unexpected websocket message: {message:?}");
-                        Continue(())
-                    }
-                    None => {
-                        // Unfortunately, with prost there's no way to log about what message type this actually was.
-                        warn!("unhandled websocket message type");
-                        Continue(())
-                    }
-                }
-            })
-            .await?;
+            .connect_download_websocket(&meta.encrypted_content_url, websocket_message_handler)?;
+
+        p2p_client.set_websocket_client(websocket_client);
+
         let mut state = DownloadState {
             decrypted_file,
             progress_tx,
@@ -151,7 +139,6 @@ impl DownloaderClient {
             total_len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
         };
 
-        p2p_client.set_websocket(websocket).await?;
         p2p_client.create_offer().await?;
         p2p_client.transfer(&mut state, timeout).await?;
 
@@ -194,6 +181,32 @@ impl DownloaderClient {
         };
 
         Ok((download_id, cipher_key))
+    }
+}
+
+#[derive(Clone)]
+struct DownloadWebSocketMessageHandler {
+    signaling_message_handler: SignalingMessageHandler,
+}
+
+impl WebSocketMessageHandler for DownloadWebSocketMessageHandler {
+    fn handle(&mut self, message: crate::websocket::WebSocketMessage) -> ControlFlow<()> {
+        match message.inner {
+            Some(web_socket_message::Inner::RtcSignaling(message)) => self
+                .signaling_message_handler
+                .handle(message)
+                .map(Continue)
+                .unwrap_or(Break(())),
+            Some(message @ web_socket_message::Inner::UploadDataAck(_)) => {
+                warn!("unexpected websocket message: {message:?}");
+                Continue(())
+            }
+            None => {
+                // Unfortunately, with prost there's no way to log about what message type this actually was.
+                warn!("unhandled websocket message type");
+                Continue(())
+            }
+        }
     }
 }
 

@@ -14,7 +14,7 @@ use bytes::Bytes;
 use crossbeam_utils::atomic::AtomicCell;
 use futures::channel::mpsc;
 use futures::future::{AbortHandle, OptionFuture};
-use futures::{pin_mut, AsyncRead, Future, FutureExt, StreamExt};
+use futures::{pin_mut, AsyncRead, Future, FutureExt};
 use prost::Message;
 use url::Url;
 
@@ -26,7 +26,7 @@ use crate::p2p::protocol::{
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
 use crate::util::{retry, Progress, ProgressState, TimeoutExt, TimeoutResult};
-use crate::websocket::{web_socket_message, WebSocketClient};
+use crate::websocket::{web_socket_message, WebSocketMessage, WebSocketMessageHandler};
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
 
 pub struct UploaderClient {
@@ -146,70 +146,39 @@ impl UploaderClient {
             };
             let relay_task = OptionFuture::from(relay_task);
 
-            // Set up the the P2P client if necessary.
-            let (signaling_message_handler, p2p_client) = match self.transport {
-                Transport::P2P | Transport::Both => {
-                    let p2p_client = PeerToPeerClient::new()?;
-                    (
-                        Some(p2p_client.signaling_message_handler()),
-                        Some(p2p_client),
-                    )
-                }
-                Transport::Relay => (None, None),
+            let mut websocket_handler = UploadWebSocketHandler {
+                encrypted_file_len,
+                progress_tx: progress_tx.clone(),
+                relay_request_timeout_handle: relay_request_timeout_handle.clone(),
+                signaling_message_handler: None,
             };
 
-            // Connect to the websocket in a retry loop.
-            let (websocket_tx, mut websocket_rx) = mpsc::unbounded();
-            let websocket_task = retry(ExponentialBackoff::default(), || async {
-                let websocket_result = self
-                    .connect_websocket(
-                        upload_path,
-                        encrypted_file_len,
-                        progress_tx.clone(),
-                        relay_request_timeout_handle.clone(),
-                        signaling_message_handler.clone(),
-                    )
-                    .await;
-                if let Err(error) = &websocket_result {
-                    warn!("error connecting to websocket: {error}");
+            // Set up the the P2P client if necessary.
+            let websocket_client;
+            let p2p_task: OptionFuture<_> = match self.transport {
+                Transport::P2P | Transport::Both => {
+                    let mut state =
+                        UploadState { encrypted_file, progress_tx: progress_tx.clone() };
+                    let mut p2p_client = PeerToPeerClient::new()?;
+                    websocket_handler.signaling_message_handler =
+                        Some(p2p_client.signaling_message_handler());
+                    websocket_client = self
+                        .api_client
+                        .connect_upload_websocket(upload_path, websocket_handler)?;
+                    p2p_client.set_websocket_client(websocket_client.clone());
+                    Some(async move { p2p_client.transfer(&mut state, None).await }.fuse()).into()
                 }
-                let websocket = websocket_result.as_retriable_result()?;
-
-                // The RTC thread might not be running, so ignore an error sending to it.
-                let _ignore = websocket_tx.unbounded_send(websocket.clone());
-                let join_result = websocket.join().await;
-                if let Err(error) = &join_result {
-                    warn!("websocket error: {error}");
+                Transport::Relay => {
+                    // We need to stay connected to websocket even for relay-only transfer, for upload progress updates.
+                    websocket_client = self
+                        .api_client
+                        .connect_upload_websocket(upload_path, websocket_handler)?;
+                    None.into()
                 }
-                join_result.as_retriable_result()
-            });
+            };
 
-            // Set up the P2P task if necessary.
-            let state = UploadState { encrypted_file, progress_tx: progress_tx.clone() };
-            let p2p_task = p2p_client.map(|mut p2p_client| {
-                let mut state = state.clone();
-                async move {
-                    loop {
-                        let websocket = websocket_rx.next().await.ok_or_else(|| {
-                            let source = "WebSocket thread died".into();
-                            Error::WebSocketClient { source }
-                        })?;
-                        p2p_client.set_websocket(websocket).await?;
-                        match p2p_client.transfer(&mut state, None).await {
-                            Err(error @ Error::WebSocketClient { .. }) => {
-                                warn!("websocket error: {error}");
-                                // Fall through and retry with a new websocket.
-                            }
-                            result => break result,
-                        }
-                    }
-                }
-            });
-            let p2p_task = OptionFuture::from(p2p_task.map(FutureExt::fuse));
-
-            // Drive the P2P, relay, and websocket tasks.
-            let websocket_task = websocket_task.fuse();
-            pin_mut!(p2p_task, relay_task, websocket_task);
+            // Drive the P2P & relay tasks.
+            pin_mut!(p2p_task, relay_task);
             loop {
                 futures::select! {
                     p2p_result = p2p_task => match p2p_result {
@@ -228,55 +197,51 @@ impl UploaderClient {
                         None => (),
                     },
                     relay_result = relay_task => if let Some(relay_result) = relay_result {
+                        drop(websocket_client);
                         break relay_result;
                     },
-                    websocket_result = websocket_task => match websocket_result {
-                        Ok(()) => warn!("websocket closed; continuing relayed"),
-                        Err(error) => warn!("websocket error; continuing relayed: {error}"),
-                    }
                 }
             }
         })
     }
+}
 
-    async fn connect_websocket(
-        &self,
-        upload_path: &str,
-        encrypted_file_len: u64,
-        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
-        relay_request_timeout_handle: RelayRequestTimeoutHandle,
-        signaling_message_handler: Option<SignalingMessageHandler>,
-    ) -> Result<WebSocketClient> {
-        let api_client = &self.api_client;
-        let future = api_client.connect_upload_websocket(upload_path, move |message| {
-            match message.inner {
-                Some(web_socket_message::Inner::RtcSignaling(message)) => {
-                    if let Some(signaling_message_handler) = &signaling_message_handler {
-                        signaling_message_handler
-                            .handle(message)
-                            .map(Continue)
-                            .unwrap_or(Break(()))
-                    } else {
-                        debug!("ignoring received RTC signaling message: {message:?}");
-                        Continue(())
-                    }
-                }
-                Some(web_socket_message::Inner::UploadDataAck(ack)) => {
-                    let _ignore = progress_tx.unbounded_send(ProgressState {
-                        current: ack.offset,
-                        total: encrypted_file_len,
-                    });
-                    relay_request_timeout_handle.cancel();
-                    Continue(())
-                }
-                None => {
-                    // Unfortunately, with prost there's no way to log about what message type this actually was.
-                    warn!("unhandled websocket message type");
+#[derive(Clone)]
+pub struct UploadWebSocketHandler {
+    encrypted_file_len: u64,
+    progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
+    relay_request_timeout_handle: RelayRequestTimeoutHandle,
+    signaling_message_handler: Option<SignalingMessageHandler>,
+}
+
+impl WebSocketMessageHandler for UploadWebSocketHandler {
+    fn handle(&mut self, message: WebSocketMessage) -> ControlFlow<()> {
+        match message.inner {
+            Some(web_socket_message::Inner::RtcSignaling(message)) => {
+                if let Some(signaling_message_handler) = &self.signaling_message_handler {
+                    signaling_message_handler
+                        .handle(message)
+                        .map(Continue)
+                        .unwrap_or(Break(()))
+                } else {
+                    debug!("ignoring received RTC signaling message: {message:?}");
                     Continue(())
                 }
             }
-        });
-        future.await
+            Some(web_socket_message::Inner::UploadDataAck(ack)) => {
+                let _ignore = self.progress_tx.unbounded_send(ProgressState {
+                    current: ack.offset,
+                    total: self.encrypted_file_len,
+                });
+                self.relay_request_timeout_handle.cancel();
+                Continue(())
+            }
+            None => {
+                // Unfortunately, with prost there's no way to log about what message type this actually was.
+                warn!("unhandled websocket message type");
+                Continue(())
+            }
+        }
     }
 }
 

@@ -14,7 +14,8 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tungstenite::protocol::CloseFrame;
 
 use super::protocol::*;
-use super::WebSocketError;
+use super::{WebSocketError, WebSocketMessageHandler};
+use crate::util::native::current_thread_block_on;
 use crate::util::ResponseExt;
 
 pub struct NativeWebSocketConnection {
@@ -36,10 +37,10 @@ impl NativeWebSocketConnection {
 }
 
 #[async_trait::async_trait(?Send)]
-impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
+impl crate::websocket::WebSocketConnectionImpl for NativeWebSocketConnection {
     async fn connect(
         url: &str,
-        mut handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
+        mut incoming_message_handler: impl WebSocketMessageHandler,
     ) -> Result<Self, WebSocketError> {
         let url = url.to_string();
         let (connect_tx, connect_rx) = oneshot::channel();
@@ -49,14 +50,9 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
         let join_guard = guard(joiner_handle, |joiner_handle| joiner_handle.abort());
         let thread = std::thread::spawn(move || {
             let _join_guard = join_guard;
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            let (connection, _response) =
-                runtime.block_on(tokio_tungstenite::connect_async(url))?;
-            let _ = connect_tx.send(());
-
-            runtime.block_on(async {
+            current_thread_block_on(async {
+                let (connection, _response) = tokio_tungstenite::connect_async(url).await?;
+                let _ = connect_tx.send(());
                 let mut outgoing_message_stream =
                     UnboundedReceiverStream::new(outgoing_message_rx).fuse();
                 let mut connection = connection.fuse();
@@ -75,7 +71,7 @@ impl crate::websocket::WebSocketConnection for NativeWebSocketConnection {
                             }
                             Some(Ok(tungstenite::Message::Binary(data))) => {
                                 let message = WebSocketMessage::decode(Bytes::from(data))?;
-                                if let ControlFlow::Break(()) = handle_incoming_message(message) {
+                                if let ControlFlow::Break(()) = incoming_message_handler.handle(message) {
                                     break;
                                 }
                             }

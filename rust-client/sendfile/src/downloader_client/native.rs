@@ -10,6 +10,7 @@ use tokio::io::BufWriter;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
 
 use super::DownloaderClient;
+use crate::util::native::current_thread_block_on;
 use crate::util::ProgressState;
 use crate::{api_client::DownloadMeta, Result};
 
@@ -19,10 +20,7 @@ struct DownloadFile {
 
 impl DownloaderClient {
     pub fn fetch_meta(&self) -> Result<DownloadMeta> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?
-            .block_on(self.fetch_meta_async())
+        current_thread_block_on(self.fetch_meta_async())
     }
 
     pub fn download<F: FnMut(ProgressState<u64>)>(
@@ -32,19 +30,16 @@ impl DownloaderClient {
         p2p_timeout: Option<Duration>,
         mut progress_fun: F,
     ) -> Result<()> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?
-            .block_on(async {
-                let file = DownloadFile::new(meta, output_dir.as_deref()).await?;
-                let decrypted_file = self.api_client.decrypt_file(meta, file);
-                let download_progress = self.download_async(meta, decrypted_file, p2p_timeout);
-                pin_mut!(download_progress);
-                while let Some(progress_state) = download_progress.try_next().await? {
-                    progress_fun(progress_state);
-                }
-                Ok(())
-            })
+        current_thread_block_on(async {
+            let file = DownloadFile::new(meta, output_dir.as_deref()).await?;
+            let decrypted_file = self.api_client.decrypt_file(meta, file);
+            let download_progress = self.download_async(meta, decrypted_file, p2p_timeout);
+            pin_mut!(download_progress);
+            while let Some(progress_state) = download_progress.try_next().await? {
+                progress_fun(progress_state);
+            }
+            Ok(())
+        })
     }
 }
 

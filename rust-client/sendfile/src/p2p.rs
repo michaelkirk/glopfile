@@ -4,6 +4,7 @@ mod native;
 mod web;
 
 use std::collections::VecDeque;
+use std::mem;
 use std::ops::ControlFlow;
 use std::ops::ControlFlow::{Break, Continue};
 use std::sync::{Arc, Weak};
@@ -20,6 +21,7 @@ use crate::websocket::{
     rtc_signaling_message, web_socket_message, IceCandidate, RtcSignalingMessage,
     SessionDescription, SessionDescriptionType, WebSocketMessage,
 };
+use crate::websocket::{WebSocketClient, WebSocketConnection};
 use crate::Error;
 
 use self::protocol::{downloader_message, uploader_message, DownloaderMessage, UploaderMessage};
@@ -136,7 +138,8 @@ pub struct PeerConnectionId(u32);
 
 #[derive(Default)]
 struct SignalingWebSocket {
-    websocket: Option<WebSocketClient>,
+    client: Option<WebSocketClient>,
+    websocket: Option<WebSocketConnection>,
     pending: VecDeque<WebSocketMessage>,
 }
 
@@ -174,9 +177,8 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
         self.connection.peer.create_offer().await
     }
 
-    pub async fn set_websocket(&mut self, websocket: WebSocketClient) -> Result<(), Error> {
-        self.signaling.websocket = Some(websocket);
-        self.signaling.flush().await
+    pub fn set_websocket_client(&mut self, client: WebSocketClient) {
+        self.signaling.client = Some(client);
     }
 
     pub async fn transfer(
@@ -209,7 +211,8 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                     event: PeerConnectionEvent::OutgoingSignalingMessage(message),
                     ..
                 } => {
-                    self.handle_outgoing_signaling_message(message).await?;
+                    self.handle_outgoing_signaling_message(message, inactivity_timeout.as_mut())
+                        .await?;
                 }
 
                 Event::Connection { event: PeerConnectionEvent::DataChannelOpened, .. } => {
@@ -243,6 +246,7 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
     async fn handle_outgoing_signaling_message(
         &mut self,
         message: rtc_signaling_message::Inner,
+        inactivity_timeout: Option<&mut Timeout>,
     ) -> Result<(), Error> {
         match &message {
             rtc_signaling_message::Inner::SessionDescription(local_description) => {
@@ -272,6 +276,7 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                     inner: Some(message),
                 })
                 .into(),
+                inactivity_timeout,
             )
             .await?;
         Ok(())
@@ -422,30 +427,41 @@ impl PeerConnectionId {
 }
 
 impl SignalingWebSocket {
-    async fn flush(&mut self) -> Result<(), Error> {
-        if let Some(websocket) = &mut self.websocket {
+    async fn flush(&mut self, mut timeout: Option<&mut Timeout>) -> Result<(), Error> {
+        if let Some(client) = &mut self.client {
             while let Some(pending) = self.pending.front() {
-                websocket.send(pending).await?;
+                let websocket = match mem::take(&mut self.websocket) {
+                    Some(websocket) => websocket,
+                    None => match &mut timeout {
+                        Some(timeout) => client
+                            .connect()
+                            .timeout(timeout.remaining()?)
+                            .await
+                            .map_err(Error::rtc_err)??,
+                        None => client.connect().await?,
+                    },
+                };
+                match websocket.send(pending).await {
+                    Ok(()) => {
+                        self.websocket = Some(websocket);
+                    }
+                    Err(error) => {
+                        warn!("error sending on websocket: {error}");
+                    }
+                }
                 self.pending.pop_front();
             }
         }
         Ok(())
     }
 
-    async fn send(&mut self, message: WebSocketMessage) -> Result<(), Error> {
-        self.flush().await?;
-        let result = match &mut self.websocket {
-            Some(websocket) => match websocket.send(&message).await {
-                Ok(()) => return Ok(()),
-                Err(error) => {
-                    self.websocket = None;
-                    Err(error)
-                }
-            },
-            None => Ok(()),
-        };
+    async fn send(
+        &mut self,
+        message: WebSocketMessage,
+        timeout: Option<&mut Timeout>,
+    ) -> Result<(), Error> {
         self.pending.push_back(message);
-        result.map_err(Into::into)
+        self.flush(timeout).await
     }
 }
 

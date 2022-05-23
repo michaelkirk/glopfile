@@ -18,7 +18,7 @@ use web_sys::{BinaryType, CloseEvent, ErrorEvent, MessageEvent, WebSocket};
 use crate::util::web::Callbacks;
 
 use super::protocol::*;
-use super::{WebSocketError, WebSocketKnownCloseStatus};
+use super::{WebSocketError, WebSocketKnownCloseStatus, WebSocketMessageHandler};
 
 pub struct WebWebSocketConnection {
     #[allow(unused)] // callbacks are held to maintain their reference counts
@@ -35,10 +35,10 @@ struct Shared {
 }
 
 #[async_trait::async_trait(?Send)]
-impl super::WebSocketConnection for WebWebSocketConnection {
+impl super::WebSocketConnectionImpl for WebWebSocketConnection {
     async fn connect(
         url: &str,
-        mut handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + 'static,
+        mut incoming_message_handler: impl WebSocketMessageHandler,
     ) -> Result<Self, WebSocketError> {
         let websocket = WebSocket::new(url)?;
         websocket.set_binary_type(BinaryType::Arraybuffer);
@@ -99,7 +99,7 @@ impl super::WebSocketConnection for WebWebSocketConnection {
                         .expect("WebSocket message data is of type ArrayBuffer");
                     let data = Uint8Array::new(&data_buffer);
                     let message = WebSocketMessage::decode(Bytes::from(data.to_vec()))?;
-                    if let ControlFlow::Break(()) = handle_incoming_message(message) {
+                    if let ControlFlow::Break(()) = incoming_message_handler.handle(message) {
                         shared.close()?;
                     }
                     Ok(())

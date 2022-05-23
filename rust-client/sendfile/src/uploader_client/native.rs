@@ -7,6 +7,7 @@ use tokio::fs::File;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
 use super::{ProvisionedFile, TryClone, UploadableFile, UploaderClient};
+use crate::util::native::current_thread_block_on;
 use crate::{Error, ProgressState, Result};
 
 pub struct NativeUploadFile {
@@ -17,20 +18,17 @@ pub type NativeProvisionedFile = ProvisionedFile<NativeUploadFile>;
 
 impl UploaderClient {
     pub fn provision_file(&self, path: &std::path::Path) -> Result<NativeProvisionedFile> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?
-            .block_on(async {
-                let file = tokio::fs::File::open(path).await?;
-                let file_name = path
-                    .file_name()
-                    .ok_or(Error::InvalidInput("invalid file path"))?
-                    .to_string_lossy()
-                    .to_string();
+        current_thread_block_on(async {
+            let file = tokio::fs::File::open(path).await?;
+            let file_name = path
+                .file_name()
+                .ok_or(Error::InvalidInput("invalid file path"))?
+                .to_string_lossy()
+                .to_string();
 
-                let file = NativeUploadFile { file: file.compat() };
-                self.provision_file_async(file, file_name).await
-            })
+            let file = NativeUploadFile { file: file.compat() };
+            self.provision_file_async(file, file_name).await
+        })
     }
 
     pub fn upload_provisioned_file<F: FnMut(ProgressState<u64>)>(
@@ -38,26 +36,20 @@ impl UploaderClient {
         provisioned_file: NativeProvisionedFile,
         mut progress_fun: F,
     ) -> Result<()> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?
-            .block_on(async {
-                let upload_progress = self.upload_provisioned_file_async(provisioned_file);
-                pin_mut!(upload_progress);
-                while let Some(progress_state) = upload_progress.try_next().await? {
-                    progress_fun(progress_state);
-                }
-                Ok(())
-            })
+        current_thread_block_on(async {
+            let upload_progress = self.upload_provisioned_file_async(provisioned_file);
+            pin_mut!(upload_progress);
+            while let Some(progress_state) = upload_progress.try_next().await? {
+                progress_fun(progress_state);
+            }
+            Ok(())
+        })
     }
 }
 
 impl<F: TryClone> ProvisionedFile<F> {
     pub fn try_clone(&self) -> Result<Self> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?
-            .block_on(TryClone::try_clone(self))
+        current_thread_block_on(TryClone::try_clone(self))
     }
 }
 

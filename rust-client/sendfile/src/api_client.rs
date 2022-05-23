@@ -1,7 +1,6 @@
 #[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
 mod ffi;
 
-use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::Relaxed;
@@ -22,7 +21,7 @@ use wasm_bindgen::prelude::*;
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer};
 use crate::error::{AsRetriableResultExt, IntoResultExt, IntoRetriableResultExt};
 use crate::util::{retry, ProgressState, TimeoutExt, TimeoutResult};
-use crate::websocket::{WebSocketClient, WebSocketMessage};
+use crate::websocket::{WebSocketClient, WebSocketMessageHandler};
 use crate::{Error, Result};
 
 // should this be configurable, or infinite even?
@@ -362,10 +361,10 @@ impl ApiClient {
         Ok(())
     }
 
-    pub async fn connect_download_websocket(
+    pub fn connect_download_websocket(
         &self,
         encrypted_content_url: &str,
-        handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
+        handle_incoming_message: impl WebSocketMessageHandler,
     ) -> Result<WebSocketClient> {
         let websocket_url = {
             let mut content_url = self
@@ -385,14 +384,14 @@ impl ApiClient {
             content_url
         };
         let websocket_client =
-            WebSocketClient::connect(websocket_url.as_str(), handle_incoming_message).await?;
+            WebSocketClient::new(websocket_url.to_string(), handle_incoming_message);
         Ok(websocket_client)
     }
 
-    pub async fn connect_upload_websocket(
+    pub fn connect_upload_websocket(
         &self,
         upload_path: &str,
-        handle_incoming_message: impl FnMut(WebSocketMessage) -> ControlFlow<()> + Send + 'static,
+        handle_incoming_message: impl WebSocketMessageHandler,
     ) -> Result<WebSocketClient> {
         let websocket_url = {
             let mut upload_url = self
@@ -411,7 +410,7 @@ impl ApiClient {
             upload_url
         };
         let websocket_client =
-            WebSocketClient::connect(websocket_url.as_str(), handle_incoming_message).await?;
+            WebSocketClient::new(websocket_url.to_string(), handle_incoming_message);
         Ok(websocket_client)
     }
 
