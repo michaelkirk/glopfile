@@ -212,8 +212,20 @@ impl UploaderClient {
             pin_mut!(p2p_task, relay_task, websocket_task);
             loop {
                 futures::select! {
-                    p2p_result = p2p_task => if let Some(Err(error)) = p2p_result {
-                        warn!("error uploading via p2p; continuing relayed: {error}");
+                    p2p_result = p2p_task => match p2p_result {
+                        Some(Ok(())) => match self.transport {
+                            Transport::P2P => break Ok(()),
+                            Transport::Both => {
+                                // Fall through and wait for relayed upload to finish as well.
+                            }
+                            Transport::Relay => unreachable!(),
+                        },
+                        Some(Err(error)) => match self.transport {
+                            Transport::P2P => break Err(error),
+                            Transport::Both => warn!("error uploading via p2p; continuing relayed: {error}"),
+                            Transport::Relay => unreachable!(),
+                        },
+                        None => (),
                     },
                     relay_result = relay_task => if let Some(relay_result) = relay_result {
                         break relay_result;
