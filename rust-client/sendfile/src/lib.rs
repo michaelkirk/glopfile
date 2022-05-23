@@ -66,86 +66,86 @@ mod tests {
     const TEST_FIXTURES_DIR: &str = "test_fixtures/";
     const SAMPLE_FILE_NAME: &str = "sample_file.txt";
 
-    #[test]
-    fn round_trip() {
-        init_test_logging();
+    struct RoundTripTest {
+        uploader_transport: Transport,
+        downloader_transport: Transport,
+        downloader_p2p_timeout: Option<Duration>,
+    }
+    impl RoundTripTest {
+        fn run(&self) {
+            init_test_logging();
 
-        let uploader = UploaderClient::new_testing();
-        let path = Path::new(TEST_FIXTURES_DIR).join(SAMPLE_FILE_NAME);
-        let provisioned_file = uploader.provision_file(&path).unwrap();
+            let uploader = UploaderClient::new_testing(self.uploader_transport);
+            let path = Path::new(TEST_FIXTURES_DIR).join(SAMPLE_FILE_NAME);
+            let provisioned_file = uploader.provision_file(&path).unwrap();
 
-        let download_url = provisioned_file.formatted_download_url_and_key();
+            let download_url = provisioned_file.formatted_download_url_and_key();
 
-        // uploading is a blocking operation, so spawn it on separate thread
-        let uploader_handler = std::thread::spawn(move || {
-            debug!("uploader will upload");
-            uploader
-                .upload_provisioned_file(provisioned_file, drop)
-                .unwrap();
-            debug!("uploader did upload");
-        });
+            // uploading is a blocking operation, so spawn it on separate thread
+            let uploader_handler = std::thread::spawn(move || {
+                debug!("uploader will upload");
+                uploader
+                    .upload_provisioned_file(provisioned_file, drop)
+                    .unwrap();
+                debug!("uploader did upload");
+            });
 
-        let downloader =
-            DownloaderClient::from_testing_download_url(&download_url, Transport::Relay).unwrap();
-        let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
-        debug!("downloader will download");
-        let meta = downloader.fetch_meta().unwrap();
-        downloader
-            .download(&meta, Some(output_dir.clone()), None, drop)
+            let downloader = DownloaderClient::from_testing_download_url(
+                &download_url,
+                self.downloader_transport,
+            )
             .unwrap();
-        debug!("downloader did download");
+            let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
+            debug!("downloader will download");
+            let meta = downloader.fetch_meta().unwrap();
+            downloader
+                .download(
+                    &meta,
+                    Some(output_dir.clone()),
+                    self.downloader_p2p_timeout,
+                    drop,
+                )
+                .unwrap();
+            debug!("downloader did download");
 
-        uploader_handler.join().unwrap();
+            uploader_handler.join().unwrap();
 
-        assert_eq!(
-            fs::read(output_dir.join(SAMPLE_FILE_NAME)).unwrap(),
-            fs::read(path).unwrap()
-        );
+            assert_eq!(
+                fs::read(output_dir.join(SAMPLE_FILE_NAME)).unwrap(),
+                fs::read(path).unwrap()
+            );
 
-        let _ignore = fs::remove_dir_all(output_dir);
+            let _ignore = fs::remove_dir_all(output_dir);
+        }
+    }
+
+    #[test]
+    fn round_trip_relayed() {
+        RoundTripTest {
+            uploader_transport: Transport::Both,
+            downloader_transport: Transport::Relay,
+            downloader_p2p_timeout: None,
+        }
+        .run();
     }
 
     #[test]
     fn round_trip_p2p() {
-        init_test_logging();
+        RoundTripTest {
+            uploader_transport: Transport::Both,
+            downloader_transport: Transport::P2P,
+            downloader_p2p_timeout: Some(Duration::from_secs(15)),
+        }
+        .run();
+    }
 
-        let uploader = UploaderClient::new_testing();
-        let path = Path::new(TEST_FIXTURES_DIR).join(SAMPLE_FILE_NAME);
-        let provisioned_file = uploader.provision_file(&path).unwrap();
-
-        let download_url = provisioned_file.formatted_download_url_and_key();
-
-        // uploading is a blocking operation, so spawn it on separate thread
-        let uploader_handler = std::thread::spawn(move || {
-            debug!("uploader will upload");
-            uploader
-                .upload_provisioned_file(provisioned_file, drop)
-                .unwrap();
-            debug!("uploader did upload");
-        });
-
-        let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
-        let downloader =
-            DownloaderClient::from_testing_download_url(&download_url, Transport::P2P).unwrap();
-        debug!("downloader will download");
-        let meta = downloader.fetch_meta().unwrap();
-        downloader
-            .download(
-                &meta,
-                Some(output_dir.clone()),
-                Some(Duration::from_secs(15)),
-                drop,
-            )
-            .unwrap();
-        debug!("downloader did download");
-
-        uploader_handler.join().unwrap();
-
-        assert_eq!(
-            fs::read(output_dir.join("sample_file.txt")).unwrap(),
-            fs::read(path).unwrap()
-        );
-
-        let _ignore = fs::remove_dir_all(output_dir);
+    #[test]
+    fn round_trip_fallback() {
+        RoundTripTest {
+            uploader_transport: Transport::P2P,
+            downloader_transport: Transport::Both,
+            downloader_p2p_timeout: Some(Duration::default()),
+        }
+        .run();
     }
 }

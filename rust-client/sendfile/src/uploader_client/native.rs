@@ -91,7 +91,7 @@ mod test {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::init_test_logging;
+    use crate::{init_test_logging, Transport};
 
     mod provisioned_file_tests {
         use super::*;
@@ -100,7 +100,7 @@ mod test {
         fn upload_non_existent_file() {
             init_test_logging();
 
-            let uploader = UploaderClient::new_testing();
+            let uploader = UploaderClient::new_testing(Transport::Both);
             let path = PathBuf::from("path/to/non-existent-file");
             assert!(matches!(
                 uploader.provision_file(&path),

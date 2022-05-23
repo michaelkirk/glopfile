@@ -11,15 +11,15 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures::channel::mpsc;
-use futures::{AsyncWriteExt, Future};
+use futures::{pin_mut, AsyncWriteExt, Future, FutureExt};
 use prost::Message;
 use url::Url;
 
 use crate::api_client::{DecryptedFile, DownloadMeta};
 use crate::cipher::ContentCipher;
 use crate::p2p::protocol::{
-    downloader_message, uploader_message, DataRequest, DataResponse, TransferFinished,
-    UploaderMessage,
+    downloader_message, uploader_message, DataRequest, DataResponse, DownloaderHello,
+    TransferFinished, UploaderHello, UploaderMessage,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
 use crate::util::{Progress, ProgressState};
@@ -30,6 +30,10 @@ pub struct DownloaderClient {
     api_client: ApiClient,
     download_id: DownloadId,
     transport: Transport,
+}
+
+struct PeerToPeerConnectHandler<'a, 'b> {
+    state: &'a mut DownloadState<'b>,
 }
 
 const CHUNK_SIZE: u64 = 16 * 1024;
@@ -71,54 +75,28 @@ impl DownloaderClient {
         p2p_timeout: Option<Duration>,
     ) -> Progress<u64, impl Future<Output = Result<()>> + 'a> {
         Progress::new_with(|progress_tx| async move {
+            let mut state = DownloadState {
+                decrypted_file,
+                progress_tx,
+                requested_offset: 0,
+                total_len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
+            };
             match self.transport {
-                Transport::Both => match self
-                    .download_p2p_async(
-                        meta,
-                        decrypted_file.clone(),
-                        p2p_timeout,
-                        progress_tx.clone(),
-                    )
-                    .await
-                {
-                    Err(Error::Timeout) => {
-                        self.download_relayed_async(meta, decrypted_file, progress_tx)
-                            .await
-                    }
-                    result => result,
-                },
-                Transport::P2P => {
-                    self.download_p2p_async(meta, decrypted_file, p2p_timeout, progress_tx)
-                        .await
-                }
+                Transport::Both => self.download_p2p(meta, &mut state, p2p_timeout).await,
+                Transport::P2P => self.download_p2p(meta, &mut state, None).await,
                 Transport::Relay => {
-                    self.download_relayed_async(meta, decrypted_file, progress_tx)
+                    self.download_relayed(meta, state.decrypted_file, state.progress_tx)
                         .await
                 }
             }
         })
     }
 
-    async fn download_relayed_async(
+    async fn download_p2p(
         &self,
         meta: &DownloadMeta,
-        decrypted_file: DecryptedFile<'_>,
-        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
-    ) -> Result<()> {
-        let result = self
-            .api_client
-            .download_content(meta, decrypted_file, progress_tx)
-            .await?;
-        info!("successfully completed relayed file transfer");
-        Ok(result)
-    }
-
-    async fn download_p2p_async(
-        &self,
-        meta: &DownloadMeta,
-        decrypted_file: DecryptedFile<'_>,
-        timeout: Option<Duration>,
-        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
+        state: &mut DownloadState<'_>,
+        p2p_timeout: Option<Duration>,
     ) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new()?;
 
@@ -132,15 +110,114 @@ impl DownloaderClient {
 
         p2p_client.set_websocket_client(websocket_client);
 
-        let mut state = DownloadState {
-            decrypted_file,
-            progress_tx,
-            requested_offset: 0,
-            total_len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
+        // First try one transfer p2p-only (to save relay server bandwidth) until the first error or timeout.
+        let p2p_result = match Self::connect_p2p(&mut p2p_client, state, p2p_timeout).await {
+            Ok(Continue(())) => {
+                self.transfer_p2p(&mut p2p_client, meta, state, p2p_timeout)
+                    .await
+            }
+            Ok(Break(())) => return Ok(()),
+            Err(error) => Err(error),
         };
 
+        match p2p_result {
+            Ok(()) => return Ok(()),
+            Err(error) => match self.transport {
+                // If user requested fallback to relayed transfer, continue below.
+                Transport::Both => match error {
+                    Error::Timeout => {
+                        info!("p2p transfer timed out; falling back to relayed transfer")
+                    }
+                    _ => warn!("p2p transfer error; falling back to relayed transfer: {error}"),
+                },
+
+                // If user requested p2p-only, return the error
+                Transport::P2P => {
+                    warn!("p2p transfer error: {error}");
+                    return Err(error);
+                }
+
+                Transport::Relay => unreachable!(),
+            },
+        }
+
+        loop {
+            // Fall back to relayed while still attempting p2p.
+            let relayed_task = self
+                .download_relayed(
+                    meta,
+                    state.decrypted_file.clone(),
+                    state.progress_tx.clone(),
+                )
+                .fuse();
+
+            // Try to exchange hellos over the p2p channel concurrently while performing the relayed
+            // transfer.
+            let connect_p2p_task = Self::connect_p2p(&mut p2p_client, state, None).fuse();
+
+            {
+                pin_mut!(connect_p2p_task, relayed_task);
+                futures::select! {
+                    connect_p2p_result = connect_p2p_task => match connect_p2p_result {
+                        Ok(Continue(())) => {
+                            // Make sure the relayed transfer terminates.
+                            drop(relayed_task);
+                        }
+                        Ok(Break(())) => break Ok(()),
+                        Err(error) => {
+                            // Finish with relayed transfer
+                            warn!("p2p transfer error; continuing relayed transfer: {error}");
+                            break relayed_task.await;
+                        }
+                    },
+                    relayed_result = relayed_task => break relayed_result,
+                }
+            }
+
+            // Continue transfer over p2p until we hit another error or timeout.
+            match self
+                .transfer_p2p(&mut p2p_client, meta, state, p2p_timeout)
+                .await
+            {
+                Ok(()) => break Ok(()),
+                Err(Error::Timeout) => info!("p2p transfer timed out; falling back to relayed"),
+                Err(error) => warn!("p2p error; falling back to relayed: {error}"),
+            }
+        }
+    }
+
+    async fn download_relayed(
+        &self,
+        meta: &DownloadMeta,
+        decrypted_file: DecryptedFile<'_>,
+        progress_tx: mpsc::UnboundedSender<ProgressState<u64>>,
+    ) -> Result<()> {
+        let result = self
+            .api_client
+            .download_content(meta, decrypted_file, progress_tx)
+            .await?;
+        info!("successfully completed relayed file transfer");
+        Ok(result)
+    }
+
+    async fn connect_p2p(
+        p2p_client: &mut PeerToPeerClient,
+        state: &mut DownloadState<'_>,
+        timeout: Option<Duration>,
+    ) -> Result<ControlFlow<()>> {
         p2p_client.create_offer().await?;
-        p2p_client.transfer(&mut state, timeout).await?;
+        let mut connect_handler = PeerToPeerConnectHandler { state };
+        p2p_client.transfer(&mut connect_handler, timeout).await
+    }
+
+    async fn transfer_p2p(
+        &self,
+        p2p_client: &mut PeerToPeerClient,
+        meta: &DownloadMeta,
+        state: &mut DownloadState<'_>,
+        timeout: Option<Duration>,
+    ) -> Result<()> {
+        p2p_client.transfer(state, timeout).await?;
 
         info!("successfully completed p2p file transfer");
         self.api_client.finish_download(meta).await?;
@@ -210,6 +287,35 @@ impl WebSocketMessageHandler for DownloadWebSocketMessageHandler {
     }
 }
 
+#[async_trait::async_trait(?Send)]
+impl PeerToPeerClientHandler for PeerToPeerConnectHandler<'_, '_> {
+    type Output = ControlFlow<()>;
+
+    async fn data_channel_opened(
+        &mut self,
+        client: &mut PeerToPeerClient,
+    ) -> Result<ControlFlow<Self::Output>> {
+        client.send_downloader_message(downloader_message::Inner::Hello(DownloaderHello {}))?;
+        Ok(Continue(()))
+    }
+
+    async fn data_channel_message(
+        &mut self,
+        client: &mut PeerToPeerClient,
+        message_data: Bytes,
+    ) -> Result<ControlFlow<Self::Output>> {
+        let output = match self
+            .state
+            .data_channel_message(client, message_data)
+            .await?
+        {
+            Continue(()) => self.state.request_data_or_finish(client).await?,
+            Break(()) => Break(()),
+        };
+        Ok(Break(output))
+    }
+}
+
 struct DownloadState<'a> {
     decrypted_file: DecryptedFile<'a>,
     requested_offset: u64,
@@ -219,6 +325,8 @@ struct DownloadState<'a> {
 
 #[async_trait::async_trait(?Send)]
 impl PeerToPeerClientHandler for DownloadState<'_> {
+    type Output = ();
+
     async fn data_channel_opened(
         &mut self,
         client: &mut PeerToPeerClient,
@@ -231,9 +339,20 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
         client: &mut PeerToPeerClient,
         message_data: Bytes,
     ) -> Result<ControlFlow<()>> {
-        let Self { decrypted_file, .. } = self;
         let message = UploaderMessage::decode(message_data).map_err(Error::rtc_err)?;
+        self.handle_uploader_message(client, message).await
+    }
+}
+
+impl DownloadState<'_> {
+    async fn handle_uploader_message(
+        &mut self,
+        client: &mut PeerToPeerClient,
+        message: UploaderMessage,
+    ) -> Result<ControlFlow<()>> {
+        let Self { decrypted_file, .. } = self;
         match message.inner {
+            Some(uploader_message::Inner::Hello(UploaderHello {})) => Ok(Continue(())),
             Some(uploader_message::Inner::DataResponse(DataResponse { offset, data })) => {
                 let received_offset = decrypted_file.offset();
                 let len = u64::try_from(data.len()).expect("128-bit machine??");
@@ -256,9 +375,7 @@ impl PeerToPeerClientHandler for DownloadState<'_> {
             }
         }
     }
-}
 
-impl DownloadState<'_> {
     async fn request_data_or_finish(
         &mut self,
         client: &mut PeerToPeerClient,

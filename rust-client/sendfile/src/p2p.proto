@@ -5,6 +5,7 @@ package sendfile.p2p.protocol;
 message UploaderMessage {
   oneof inner {
     DataResponse data_response = 1;
+    UploaderHello hello = 2;
   }
 }
 
@@ -12,7 +13,14 @@ message DownloaderMessage {
   oneof inner {
     DataRequest data_request = 1;
     TransferFinished transfer_finished = 2;
+    DownloaderHello hello = 3;
   }
+}
+
+message UploaderHello {
+}
+
+message DownloaderHello {
 }
 
 message DataRequest {

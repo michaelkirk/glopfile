@@ -16,7 +16,6 @@ use instant::{Duration, Instant};
 use prost::Message;
 
 use crate::util::TimeoutExt;
-use crate::websocket::WebSocketClient;
 use crate::websocket::{
     rtc_signaling_message, web_socket_message, IceCandidate, RtcSignalingMessage,
     SessionDescription, SessionDescriptionType, WebSocketMessage,
@@ -92,10 +91,12 @@ pub trait RtcDataChannel {
 
 #[async_trait::async_trait(?Send)]
 pub trait PeerToPeerClientHandler<RtcTy: Rtc = DefaultRtc> {
+    type Output;
+
     async fn data_channel_opened(
         &mut self,
         _client: &mut PeerToPeerClient<RtcTy>,
-    ) -> Result<ControlFlow<()>, Error> {
+    ) -> Result<ControlFlow<Self::Output>, Error> {
         Ok(Continue(()))
     }
 
@@ -103,7 +104,7 @@ pub trait PeerToPeerClientHandler<RtcTy: Rtc = DefaultRtc> {
         &mut self,
         client: &mut PeerToPeerClient<RtcTy>,
         message_data: Bytes,
-    ) -> Result<ControlFlow<()>, Error>;
+    ) -> Result<ControlFlow<Self::Output>, Error>;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -181,11 +182,11 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
         self.signaling.client = Some(client);
     }
 
-    pub async fn transfer(
+    pub async fn transfer<H: PeerToPeerClientHandler<RtcTy>>(
         &mut self,
-        handler: &mut impl PeerToPeerClientHandler<RtcTy>,
+        handler: &mut H,
         inactivity_timeout: Option<Duration>,
-    ) -> Result<(), Error> {
+    ) -> Result<H::Output, Error> {
         let mut inactivity_timeout = inactivity_timeout.map(Timeout::new);
         loop {
             let handler_message = match &inactivity_timeout {
@@ -217,8 +218,8 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 
                 Event::Connection { event: PeerConnectionEvent::DataChannelOpened, .. } => {
                     info!("RTC data channel opened");
-                    if let Break(()) = handler.data_channel_opened(self).await? {
-                        break;
+                    if let Break(output) = handler.data_channel_opened(self).await? {
+                        break Ok(output);
                     }
                 }
 
@@ -234,13 +235,12 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                     ..
                 } => {
                     inactivity_timeout.as_mut().map(Timeout::reset);
-                    if let Break(()) = handler.data_channel_message(self, message_data).await? {
-                        break;
+                    if let Break(output) = handler.data_channel_message(self, message_data).await? {
+                        break Ok(output);
                     }
                 }
             }
         }
-        Ok(())
     }
 
     async fn handle_outgoing_signaling_message(

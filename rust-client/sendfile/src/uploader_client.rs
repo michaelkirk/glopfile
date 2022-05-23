@@ -21,8 +21,8 @@ use url::Url;
 use crate::api_client::{EncryptedFile, REQUEST_TIMEOUT};
 use crate::error::AsRetriableResultExt;
 use crate::p2p::protocol::{
-    downloader_message, uploader_message, DataRequest, DataResponse, DownloaderMessage,
-    TransferFinished,
+    downloader_message, uploader_message, DataRequest, DataResponse, DownloaderHello,
+    DownloaderMessage, TransferFinished, UploaderHello,
 };
 use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
 use crate::util::{retry, Progress, ProgressState, TimeoutExt, TimeoutResult};
@@ -52,7 +52,7 @@ impl UploaderClient {
     }
 
     #[cfg(test)]
-    pub fn new_testing() -> Self {
+    pub fn new_testing(transport: Transport) -> Self {
         let api_endpoint = option_env!("TEST_SENDFILE_API_ENDPOINT")
             .unwrap_or("http://localhost:8080")
             .parse()
@@ -61,7 +61,7 @@ impl UploaderClient {
             .unwrap_or("http://localhost:3000")
             .parse()
             .expect("invalid hardcoded url");
-        Self::new(api_endpoint, download_endpoint, Transport::Both)
+        Self::new(api_endpoint, download_endpoint, transport)
     }
 
     async fn provision_file_async<F>(
@@ -299,6 +299,8 @@ struct UploadState {
 
 #[async_trait::async_trait(?Send)]
 impl PeerToPeerClientHandler for UploadState {
+    type Output = ();
+
     async fn data_channel_message(
         &mut self,
         client: &mut PeerToPeerClient,
@@ -307,6 +309,10 @@ impl PeerToPeerClientHandler for UploadState {
         let Self { encrypted_file, progress_tx, .. } = self;
         let message = DownloaderMessage::decode(message_data).map_err(Error::rtc_err)?;
         match message.inner {
+            Some(downloader_message::Inner::Hello(DownloaderHello {})) => {
+                client.send_uploader_message(uploader_message::Inner::Hello(UploaderHello {}))?;
+                Ok(Continue(()))
+            }
             Some(downloader_message::Inner::DataRequest(DataRequest { offset, len })) => {
                 debug!("received RTC DataRequest from downloader for offset {offset} len {len}");
                 let new_offset = offset + len;
@@ -367,7 +373,7 @@ mod tests {
     fn test_download_url() {
         init_test_logging();
 
-        let uploader_client = UploaderClient::new_testing();
+        let uploader_client = UploaderClient::new_testing(Transport::Both);
         let download_id = DownloadId::new("abc123".to_string());
         let url = uploader_client.download_url_without_cipher_key(&download_id);
         assert_eq!(
