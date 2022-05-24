@@ -193,8 +193,10 @@ impl Cli {
         no_p2p: bool,
         no_relay: bool,
     ) -> Result<()> {
-        let default_api_endpoint =
-            Url::parse("http://localhost:8080").expect("invalid hardcoded endpoint");
+        let default_api_endpoint = option_env!("SENDFILE_API_ENDPOINT")
+            .unwrap_or("http://localhost:8080")
+            .parse()
+            .expect("invalid hardcoded url");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
         let transport = Transport::with_p2p_and_relay(!no_p2p, !no_relay)
