@@ -157,13 +157,13 @@ struct PendingFileDownload {
     }
 }
 
-enum FileDownloadModelError: Error {
+enum FileDownloadModelError: LocalizedError {
     case initialize(Error)
     case fetchMeta(Error)
     case download(Error)
     case io(Error)
 
-    var localizedDescription: String {
+    var errorDescription: String {
         switch (self) {
         case .initialize: return "Internal error starting download: \(message)"
         case .fetchMeta: return "Error retrieving download information: \(message)"

@@ -114,13 +114,13 @@ struct PendingFileUpload {
     }
 }
 
-enum FileUploadModelError: Error {
+enum FileUploadModelError: LocalizedError {
     case access
     case initialize(Error)
     case provision(Error)
     case upload(Error)
 
-    var localizedDescription: String {
+    var errorDescription: String? {
         switch (self) {
         case .access: return message
         case .initialize: return "Internal error starting upload: \(message)"
