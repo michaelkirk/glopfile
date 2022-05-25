@@ -27,30 +27,38 @@ class FileUploadModel: ObservableObject {
         state = .started(fileUrl)
 
         dispatchQueue.async {
-            var pending: PendingFileUpload
-            do {
-                do {
-                    if !fileUrl.startAccessingSecurityScopedResource() {
-                        throw FileUploadModelError.access
-                    }
+            guard fileUrl.startAccessingSecurityScopedResource() else {
+                DispatchQueue.main.async {
+                    self.state = .error(FileUploadModelError.access)
+                    self.pending = nil
+                }
+                return
+            }
 
-                    defer {
-                        fileUrl.stopAccessingSecurityScopedResource()
-                    }
-
-                    if let existingPending = existingPending {
-                        pending = existingPending
-                    } else {
-                        pending = try PendingFileUpload(fileUrl: fileUrl)
-                    }
-                } catch let error {
+            defer {
+                fileUrl.stopAccessingSecurityScopedResource()
+            }
+                               
+            let pendingResult: Result<PendingFileUpload, Error>
+            if let existingPending = existingPending {
+                pendingResult = Result.success(existingPending)
+            } else {
+                pendingResult = Result { try PendingFileUpload(fileUrl: fileUrl) }
+            }
+                        
+            var pending: PendingFileUpload;
+            switch pendingResult {
+                case .success(let ok):
+                    pending = ok
+                case .failure(let error):
                     DispatchQueue.main.async {
                         self.state = .error(error)
                         self.pending = nil
                     }
                     return
-                }
-
+            }
+            
+            do {
                 let _ = try pending.provisionFile()
                 DispatchQueue.main.async {
                     self.state = .started(fileUrl)
