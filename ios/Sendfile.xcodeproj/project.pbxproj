@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4530770428418BD000987C65 /* ActivityView in Frameworks */ = {isa = PBXBuildFile; productRef = 4530770328418BD000987C65 /* ActivityView */; };
 		C8073D7D28342EF300A1B12F /* DocumentViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8073D7C28342EF300A1B12F /* DocumentViewer.swift */; };
 		C8073D802834507D00A1B12F /* SendfileRustFFI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8073D7F2834507D00A1B12F /* SendfileRustFFI.swift */; };
 		C82B9AB1282ADD450025C712 /* FileDownloadModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82B9AB0282ADD450025C712 /* FileDownloadModel.swift */; };
@@ -61,6 +62,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4530770428418BD000987C65 /* ActivityView in Frameworks */,
 				C83E302427C5854400D5B4E8 /* libc++.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -231,6 +233,7 @@
 			);
 			name = Sendfile;
 			packageProductDependencies = (
+				4530770328418BD000987C65 /* ActivityView */,
 			);
 			productName = "sendfile-ios-app";
 			productReference = C87A469027BD4A9800C83DCE /* Sendfile.app */;
@@ -261,6 +264,7 @@
 			);
 			mainGroup = C87A468727BD4A9800C83DCE;
 			packageReferences = (
+				4530770228418BD000987C65 /* XCRemoteSwiftPackageReference "ActivityView" */,
 			);
 			productRefGroup = C87A469127BD4A9800C83DCE /* Products */;
 			projectDirPath = "";
@@ -728,6 +732,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		4530770228418BD000987C65 /* XCRemoteSwiftPackageReference "ActivityView" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SwiftUI-Plus/ActivityView";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4530770328418BD000987C65 /* ActivityView */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4530770228418BD000987C65 /* XCRemoteSwiftPackageReference "ActivityView" */;
+			productName = ActivityView;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = C87A468827BD4A9800C83DCE /* Project object */;
 }

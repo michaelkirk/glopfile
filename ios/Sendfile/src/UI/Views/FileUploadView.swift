@@ -1,49 +1,59 @@
+import ActivityView
 import Foundation
 import SwiftUI
 
 struct FileUploadView: View {
     @Binding var fileUrl: URL?
-
+    @State var shareDownloadUrl: ActivityItem?
     @StateObject var fileUpload: FileUploadModel = FileUploadModel()
 
     var body: some View {
         VStack(alignment: .center, spacing: 16) {
             uploadStatus
-            if case .error(_) = fileUpload.state {
+            switch fileUpload.state {
+            case .error(_):
                 retryButton
+            case .provisioned(let fileUrl, let downloadUrl):
+                shareView(fileUrl: fileUrl, downloadUrl: downloadUrl)
+            default:
+                EmptyView()
             }
-            shareView
             Spacer()
-        }
-        .onAppear {
-            if let fileUrl = fileUrl, case .idle = fileUpload.state {
-                fileUpload.start(fileUrl: fileUrl)
+        }.padding()
+            .onAppear {
+                if let fileUrl = fileUrl, case .idle = fileUpload.state {
+                    fileUpload.start(fileUrl: fileUrl)
+                }
             }
-        }
     }
 
-    var shareView: some View {
+    func shareView(fileUrl: URL, downloadUrl: URL) -> some View {
         VStack {
-            if case .success = fileUpload.state {
-            } else if let downloadUrl = fileUpload.pending?.provisionedFile?
-                .formattedDownloadUrlAndKey()
-            {
-                Text("Send this download link to the recipient to continue uploading:")
-                Button(action: {
-                    UIPasteboard.general.url = URL(string: downloadUrl)!
-                }) {
-                    Text("\(downloadUrl)")
-                }.padding(.bottom, 30)
+            Text("Send the download link to the recipient to continue uploading:")
+            Text(downloadUrl.absoluteString).lineLimit(1).padding(.bottom, 16)
 
-                if let image = buildQRImage(urlString: downloadUrl) {
-                    Text("Or have them scan this code:")
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(
-                            minWidth: nil, idealWidth: nil, maxWidth: 200, minHeight: nil,
-                            idealHeight: nil, maxHeight: 200, alignment: .center)
+            HStack(alignment: .center, spacing: 32) {
+                Button(action: {
+                    UIPasteboard.general.url = downloadUrl
+                }) {
+                    Label("Copy Link", systemImage: "doc.on.doc")
                 }
+                Button(action: {
+                    self.shareDownloadUrl = ActivityItem(items: downloadUrl)
+                }) {
+                    Label("Share Link", systemImage: "square.and.arrow.up")
+                }.activitySheet(self.$shareDownloadUrl)
+            }
+            Spacer()
+            if let image = buildQRImage(url: downloadUrl) {
+                Text("Or have them scan this code:")
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(
+                        minWidth: nil, idealWidth: nil, maxWidth: 200, minHeight: nil,
+                        idealHeight: nil, maxHeight: 200, alignment: .center)
+                Spacer()
             }
         }
     }
@@ -69,11 +79,9 @@ struct FileUploadView: View {
             case .idle:
                 EmptyView()
             case .started:
-                if fileUpload.pending == nil {
-                    Header("Provisioning...")
-                } else {
-                    Header("Uploading...")
-                }
+                Header("Provisioning...")
+            case .provisioned:
+                Header("Uploading...")
             case .success:
                 Header("File sent!")
             case .error(let lastError):
@@ -83,13 +91,13 @@ struct FileUploadView: View {
     }
 }
 
-func buildQRImage(urlString: String) -> UIImage? {
+func buildQRImage(url: URL) -> UIImage? {
     guard let filter = CIFilter(name: "CIQRCodeGenerator") else {
         assertionFailure("failed to build QR Code generator")
         return nil
     }
 
-    let data = urlString.data(using: .utf8)
+    let data = url.absoluteString.data(using: .utf8)
     filter.setValue(data, forKey: "inputMessage")
 
     let scaleUp = CGAffineTransform(scaleX: 4, y: 4)

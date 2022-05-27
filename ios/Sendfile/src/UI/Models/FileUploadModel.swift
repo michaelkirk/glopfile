@@ -9,7 +9,8 @@ class FileUploadModel: ObservableObject {
 
     enum State {
         case idle
-        case started(URL)
+        case started(fileUrl: URL)
+        case provisioned(fileUrl: URL, downloadUrl: URL)
         case success
         case error(Error)
     }
@@ -25,7 +26,7 @@ class FileUploadModel: ObservableObject {
             existingPending = pending
         }
 
-        state = .started(fileUrl)
+        state = .started(fileUrl: fileUrl)
 
         dispatchQueue.async {
             guard fileUrl.startAccessingSecurityScopedResource() else {
@@ -60,9 +61,11 @@ class FileUploadModel: ObservableObject {
             }
 
             do {
-                let _ = try pending.provisionFile()
+                let provisionedFile = try pending.provisionFile()
                 DispatchQueue.main.async {
-                    self.state = .started(fileUrl)
+                    self.state = .provisioned(
+                        fileUrl: fileUrl,
+                        downloadUrl: URL(string: provisionedFile.formattedDownloadUrlAndKey())!)
                     self.pending = pending
                 }
 
