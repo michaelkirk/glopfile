@@ -28,14 +28,16 @@ struct FileDownloadView: View {
                 Spacer()
             }
         }
-        .background(Group {
-            if case .success(let fileUrl) = fileDownload.state {
-                DocumentViewer(fileUrl: fileUrl, isPresented: $fileViewerActive)
-                    .onAppear {
-                        fileViewerActive = true
-                    }
+        .background(
+            Group {
+                if case .success(let fileUrl) = fileDownload.state {
+                    DocumentViewer(fileUrl: fileUrl, isPresented: $fileViewerActive)
+                        .onAppear {
+                            fileViewerActive = true
+                        }
+                }
             }
-        })
+        )
         .onChange(of: url) { _ in
             if let url = url, url != fileDownload.pending?.url {
                 fileDownload.startFetchMeta(url: url)
@@ -103,5 +105,6 @@ struct FileDownloadView: View {
 private func formatFileSize(bytes: UInt64) -> String {
     let size = Measurement(value: Double(bytes), unit: UnitInformationStorage.bytes)
     let convertedSize = size.converted(to: .megabytes)
-    return String.localizedStringWithFormat("%0.2f %@", convertedSize.value, convertedSize.unit.symbol)
+    return String.localizedStringWithFormat(
+        "%0.2f %@", convertedSize.value, convertedSize.unit.symbol)
 }

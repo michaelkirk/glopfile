@@ -35,7 +35,7 @@ class SendfileSceneDelegate: NSObject, UIWindowSceneDelegate, ObservableObject {
 
     func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
         if userActivity.activityType == NSUserActivityTypeBrowsingWeb,
-           let url = userActivity.webpageURL
+            let url = userActivity.webpageURL
         {
             openedUrl = url
         }

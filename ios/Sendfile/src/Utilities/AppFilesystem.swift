@@ -9,7 +9,8 @@ public class AppFilesystem {
     static func appDownloadDirectory(downloadId: String) throws -> URL {
         let downloadDirectory = try appTemporaryDirectory().appendingPathComponent(downloadId)
         if !FileManager.default.fileExists(atPath: downloadDirectory.path) {
-            try FileManager.default.createDirectory(at: downloadDirectory, withIntermediateDirectories: false)
+            try FileManager.default.createDirectory(
+                at: downloadDirectory, withIntermediateDirectories: false)
         }
         return downloadDirectory
     }

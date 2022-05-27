@@ -62,7 +62,9 @@ struct DocumentViewer: UIViewControllerRepresentable {
             }
         }
 
-        func documentInteractionControllerViewControllerForPreview(_ controller: UIDocumentInteractionController) -> UIViewController {
+        func documentInteractionControllerViewControllerForPreview(
+            _ controller: UIDocumentInteractionController
+        ) -> UIViewController {
             return self
         }
 

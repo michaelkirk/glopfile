@@ -35,7 +35,9 @@ struct DocumentPicker: UIViewControllerRepresentable {
             self.picker = picker
         }
 
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        func documentPicker(
+            _ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]
+        ) {
             picker.fileUrl = urls.first
         }
 

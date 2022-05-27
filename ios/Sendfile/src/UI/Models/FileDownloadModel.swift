@@ -1,6 +1,6 @@
 import Foundation
-import os
 import SendfileRustFFI
+import os
 
 class FileDownloadModel: ObservableObject {
     static let P2P_TIMEOUT: TimeInterval? = 5.0
@@ -16,7 +16,8 @@ class FileDownloadModel: ObservableObject {
         case error(Error)
     }
 
-    private let dispatchQueue = DispatchQueue(label: "FileDownloader", attributes: .concurrent, target: .global(qos: .userInitiated))
+    private let dispatchQueue = DispatchQueue(
+        label: "FileDownloader", attributes: .concurrent, target: .global(qos: .userInitiated))
 
     func startFetchMeta(url: URL) {
         dispatchPrecondition(condition: .onQueue(DispatchQueue.main))
@@ -148,11 +149,13 @@ struct PendingFileDownload {
         }
 
         do {
-            try client.downloadFfi(meta: meta, outputDir: downloadDirectoryUrl.path, p2pTimeout: FileDownloadModel.P2P_TIMEOUT)
+            try client.downloadFfi(
+                meta: meta, outputDir: downloadDirectoryUrl.path,
+                p2pTimeout: FileDownloadModel.P2P_TIMEOUT)
         } catch let error {
             throw FileDownloadModelError.download(error)
         }
-        
+
         return downloadDirectoryUrl.appendingPathComponent(meta.fileMetaFfi().fileName)
     }
 }
@@ -164,7 +167,7 @@ enum FileDownloadModelError: LocalizedError {
     case io(Error)
 
     var errorDescription: String {
-        switch (self) {
+        switch self {
         case .initialize: return "Internal error starting download: \(message)"
         case .fetchMeta: return "Error retrieving download information: \(message)"
         case .download: return "Error downloading file: \(message)"
@@ -173,7 +176,7 @@ enum FileDownloadModelError: LocalizedError {
     }
 
     var message: String {
-        switch (self) {
+        switch self {
         case .initialize(let error), .fetchMeta(let error), .download(let error), .io(let error):
             if case let error as SendfileError = error {
                 return error.message

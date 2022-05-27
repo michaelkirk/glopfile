@@ -1,7 +1,7 @@
-import Foundation
 import Combine
-import os
+import Foundation
 import SendfileRustFFI
+import os
 
 class FileUploadModel: ObservableObject {
     @Published var state: State = .idle
@@ -14,7 +14,8 @@ class FileUploadModel: ObservableObject {
         case error(Error)
     }
 
-    private let dispatchQueue = DispatchQueue(label: "FileUploadModel", attributes: .concurrent, target: .global(qos: .userInitiated))
+    private let dispatchQueue = DispatchQueue(
+        label: "FileUploadModel", attributes: .concurrent, target: .global(qos: .userInitiated))
 
     func start(fileUrl: URL) {
         dispatchPrecondition(condition: .onQueue(DispatchQueue.main))
@@ -38,26 +39,26 @@ class FileUploadModel: ObservableObject {
             defer {
                 fileUrl.stopAccessingSecurityScopedResource()
             }
-                               
+
             let pendingResult: Result<PendingFileUpload, Error>
             if let existingPending = existingPending {
                 pendingResult = Result.success(existingPending)
             } else {
                 pendingResult = Result { try PendingFileUpload(fileUrl: fileUrl) }
             }
-                        
-            var pending: PendingFileUpload;
+
+            var pending: PendingFileUpload
             switch pendingResult {
-                case .success(let ok):
-                    pending = ok
-                case .failure(let error):
-                    DispatchQueue.main.async {
-                        self.state = .error(error)
-                        self.pending = nil
-                    }
-                    return
+            case .success(let ok):
+                pending = ok
+            case .failure(let error):
+                DispatchQueue.main.async {
+                    self.state = .error(error)
+                    self.pending = nil
+                }
+                return
             }
-            
+
             do {
                 let _ = try pending.provisionFile()
                 DispatchQueue.main.async {
@@ -129,7 +130,7 @@ enum FileUploadModelError: LocalizedError {
     case upload(Error)
 
     var errorDescription: String? {
-        switch (self) {
+        switch self {
         case .access: return message
         case .initialize: return "Internal error starting upload: \(message)"
         case .provision: return "Error starting upload: \(message)"
@@ -138,7 +139,7 @@ enum FileUploadModelError: LocalizedError {
     }
 
     var message: String {
-        switch (self) {
+        switch self {
         case .access:
             return "Cannot access file to upload."
         case .initialize(let error), .provision(let error), .upload(let error):

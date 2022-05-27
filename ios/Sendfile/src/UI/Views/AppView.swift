@@ -1,7 +1,7 @@
 import Foundation
+import SendfileRustFFI
 import SwiftUI
 import os
-import SendfileRustFFI
 
 struct AppView: View {
     @Environment(\.env) var env: AppEnvironment
@@ -18,10 +18,16 @@ struct AppView: View {
         NavigationView {
             ZStack {
                 uploadView
-                NavigationLink(destination: FileUploadView(fileUrl: $uploadFileUrl), isActive: $fileUploadViewIsActive) {
+                NavigationLink(
+                    destination: FileUploadView(fileUrl: $uploadFileUrl),
+                    isActive: $fileUploadViewIsActive
+                ) {
                     EmptyView()
                 }
-                NavigationLink(destination: FileDownloadView(url: $downloadUrl), isActive: $fileDownloadViewIsActive) {
+                NavigationLink(
+                    destination: FileDownloadView(url: $downloadUrl),
+                    isActive: $fileDownloadViewIsActive
+                ) {
                     EmptyView()
                 }
             }
