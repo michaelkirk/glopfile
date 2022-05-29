@@ -15,10 +15,14 @@ use futures::StreamExt;
 use instant::{Duration, Instant};
 use prost::Message;
 
+use crate::cipher::{
+    CipherKey, ContentCipher, ContentCipherBuffer, ContentCipherBufferPaddingType,
+    ContentCipherUsage,
+};
 use crate::util::TimeoutExt;
 use crate::websocket::{
-    rtc_signaling_message, web_socket_message, IceCandidate, RtcSignalingMessage,
-    SessionDescription, SessionDescriptionType, WebSocketMessage,
+    rtc_signaling_message, web_socket_message, EncryptedRtcSignalingMessage, IceCandidate,
+    RtcSignalingMessage, SessionDescription, SessionDescriptionType, WebSocketMessage,
 };
 use crate::websocket::{WebSocketClient, WebSocketConnection};
 use crate::Error;
@@ -38,6 +42,12 @@ pub struct PeerToPeerClient<RtcTy: Rtc = DefaultRtc> {
     signaling: SignalingWebSocket,
     tx: Weak<mpsc::UnboundedSender<Event>>,
     rx: mpsc::UnboundedReceiver<Event>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum SignalingCipherUsage {
+    Uploader,
+    Downloader,
 }
 
 #[derive(Clone)]
@@ -121,7 +131,7 @@ pub enum PeerConnectionEvent {
 }
 
 enum Event {
-    IncomingSignalingMessage(RtcSignalingMessage),
+    IncomingSignalingMessage(EncryptedRtcSignalingMessage),
     Connection {
         id: PeerConnectionId,
         event: PeerConnectionEvent,
@@ -137,11 +147,12 @@ struct Connection<RtcTy: Rtc> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PeerConnectionId(u32);
 
-#[derive(Default)]
 struct SignalingWebSocket {
     client: Option<WebSocketClient>,
     websocket: Option<WebSocketConnection>,
     pending: VecDeque<WebSocketMessage>,
+    cipher: ContentCipher,
+    cipher_usage: SignalingCipherUsage,
 }
 
 struct Timeout {
@@ -157,8 +168,14 @@ const DATA_CHANNEL_LABEL: &str = "sendfile";
 const DATA_CHANNEL_ID: u16 = 0;
 const STUN_SERVERS: &[&str] = &["stun:stun.l.google.com:19302"];
 
+const SIGNALING_CIPHER_PADDING_TYPE: ContentCipherBufferPaddingType =
+    ContentCipherBufferPaddingType::Zeroes { block_len: 64 };
+
 impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(
+        signaling_cipher_key: &CipherKey,
+        signaling_cipher_usage: SignalingCipherUsage,
+    ) -> Result<Self, Error> {
         let (tx, rx) = mpsc::unbounded();
         let connection_tx = Arc::new(tx);
         let tx = Arc::downgrade(&connection_tx);
@@ -166,7 +183,13 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
             connection: Connection::new(PeerConnectionId::default(), connection_tx)?,
             rx,
             tx,
-            signaling: SignalingWebSocket::default(),
+            signaling: SignalingWebSocket {
+                client: None,
+                websocket: None,
+                pending: VecDeque::with_capacity(8),
+                cipher: ContentCipher::new(signaling_cipher_key),
+                cipher_usage: signaling_cipher_usage,
+            },
         })
     }
 
@@ -270,22 +293,16 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
                 }
             }
         }
-        self.signaling
-            .send(
-                web_socket_message::Inner::RtcSignaling(RtcSignalingMessage {
-                    inner: Some(message),
-                })
-                .into(),
-                inactivity_timeout,
-            )
-            .await?;
+
+        self.signaling.send(message, inactivity_timeout).await?;
         Ok(())
     }
 
     async fn handle_incoming_signaling_message(
         &mut self,
-        message: RtcSignalingMessage,
+        encrypted_message: EncryptedRtcSignalingMessage,
     ) -> Result<(), Error> {
+        let message = self.signaling.decrypt(encrypted_message).await?;
         match message.inner {
             Some(rtc_signaling_message::Inner::SessionDescription(remote_description)) => {
                 let local_description_type = self.connection.peer.local_description_type();
@@ -391,7 +408,10 @@ impl<RtcTy: Rtc> PeerToPeerClient<RtcTy> {
 }
 
 impl SignalingMessageHandler {
-    pub fn handle(&self, message: RtcSignalingMessage) -> Result<(), SignalingMessageHandlerError> {
+    pub fn handle(
+        &self,
+        message: EncryptedRtcSignalingMessage,
+    ) -> Result<(), SignalingMessageHandlerError> {
         self.tx
             .upgrade()
             .ok_or(SignalingMessageHandlerError)?
@@ -426,6 +446,24 @@ impl PeerConnectionId {
     }
 }
 
+impl SignalingCipherUsage {
+    fn peer(&self) -> Self {
+        match self {
+            Self::Downloader => Self::Uploader,
+            Self::Uploader => Self::Downloader,
+        }
+    }
+}
+
+impl From<SignalingCipherUsage> for ContentCipherUsage {
+    fn from(from: SignalingCipherUsage) -> Self {
+        match from {
+            SignalingCipherUsage::Downloader => Self::DownloaderRtcSignaling,
+            SignalingCipherUsage::Uploader => Self::UploaderRtcSignaling,
+        }
+    }
+}
+
 impl SignalingWebSocket {
     async fn flush(&mut self, mut timeout: Option<&mut Timeout>) -> Result<(), Error> {
         if let Some(client) = &mut self.client {
@@ -457,11 +495,34 @@ impl SignalingWebSocket {
 
     async fn send(
         &mut self,
-        message: WebSocketMessage,
+        message: rtc_signaling_message::Inner,
         timeout: Option<&mut Timeout>,
     ) -> Result<(), Error> {
-        self.pending.push_back(message);
+        let message = RtcSignalingMessage { inner: Some(message) };
+        let plaintext =
+            ContentCipherBuffer::from_message_padded(&message, SIGNALING_CIPHER_PADDING_TYPE);
+        let ciphertext = self
+            .cipher
+            .encrypt(plaintext, self.cipher_usage.into())
+            .await;
+        let encrypted_message = WebSocketMessage {
+            inner: Some(web_socket_message::Inner::RtcSignaling(
+                EncryptedRtcSignalingMessage { ciphertext: ciphertext.into() },
+            )),
+        };
+
+        self.pending.push_back(encrypted_message);
         self.flush(timeout).await
+    }
+
+    async fn decrypt(
+        &self,
+        encrypted_message: EncryptedRtcSignalingMessage,
+    ) -> Result<RtcSignalingMessage, Error> {
+        let ciphertext = encrypted_message.ciphertext.to_vec();
+        self.cipher
+            .decrypt_message(ciphertext, self.cipher_usage.peer().into())
+            .await
     }
 }
 

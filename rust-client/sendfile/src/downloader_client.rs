@@ -21,7 +21,9 @@ use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderHello,
     TransferFinished, UploaderHello, UploaderMessage,
 };
-use crate::p2p::{PeerToPeerClient, PeerToPeerClientHandler, SignalingMessageHandler};
+use crate::p2p::{
+    PeerToPeerClient, PeerToPeerClientHandler, SignalingCipherUsage, SignalingMessageHandler,
+};
 use crate::util::{Progress, ProgressState};
 use crate::websocket::{web_socket_message, WebSocketMessageHandler};
 use crate::{ApiClient, CipherKey, DownloadId, Error, Result, Transport};
@@ -98,7 +100,10 @@ impl DownloaderClient {
         state: &mut DownloadState<'_>,
         p2p_timeout: Option<Duration>,
     ) -> Result<()> {
-        let mut p2p_client = PeerToPeerClient::new()?;
+        let mut p2p_client = PeerToPeerClient::new(
+            self.api_client.cipher_key(),
+            SignalingCipherUsage::Downloader,
+        )?;
 
         let websocket_message_handler = DownloadWebSocketMessageHandler {
             signaling_message_handler: p2p_client.signaling_message_handler(),

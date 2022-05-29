@@ -14,7 +14,7 @@ pub struct WebCipher {
 }
 
 #[async_trait::async_trait(?Send)]
-impl super::Cipher for WebCipher {
+impl super::CipherImpl for WebCipher {
     async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self
     where
         Self: Sized,

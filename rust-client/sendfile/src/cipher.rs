@@ -31,6 +31,7 @@ pub struct CipherKey {
 }
 
 pub use buffer::ContentCipherBuffer;
+pub(crate) use buffer::ContentCipherBufferPaddingType;
 
 pub const KEY_SIZE: usize = <Aes256Gcm as aes_gcm::NewAead>::KeySize::USIZE;
 pub const NONCE_SIZE: usize = <Aes256Gcm as aes_gcm::AeadCore>::NonceSize::USIZE;
@@ -48,7 +49,7 @@ impl std::fmt::Debug for CipherKey {
 }
 
 #[async_trait::async_trait(?Send)]
-trait Cipher {
+trait CipherImpl {
     async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self
     where
         Self: Sized;
@@ -87,6 +88,25 @@ impl CipherKey {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ContentCipherUsage {
+    Content,
+    Metadata,
+    UploaderRtcSignaling,
+    DownloaderRtcSignaling,
+}
+
+impl ContentCipherUsage {
+    fn info(&self) -> &'static [u8] {
+        match self {
+            Self::Content => b"content",
+            Self::Metadata => b"metadata",
+            Self::UploaderRtcSignaling => b"uploader_rtc_signaling",
+            Self::DownloaderRtcSignaling => b"downloader_rtc_signaling",
+        }
+    }
+}
+
 pub(crate) struct ContentCipher {
     cipher_key: CipherKey,
 }
@@ -99,40 +119,43 @@ impl ContentCipher {
         (NONCE_SIZE + TAG_SIZE) as u64
     }
 
-    async fn derive_cipher(&self, info: &[u8]) -> impl Cipher {
+    async fn derive_cipher(&self, info: &[u8]) -> impl CipherImpl {
         DefaultCipher::derive_new(&self.cipher_key, info).await
     }
 
-    pub async fn encrypt_content(&self, plaintext: ContentCipherBuffer) -> Vec<u8> {
-        self.encrypt(plaintext, b"content").await
-    }
-
-    pub async fn encrypt_metadata(&self, plaintext: ContentCipherBuffer) -> Vec<u8> {
-        self.encrypt(plaintext, b"metadata").await
-    }
-
     // TODO: stream
-    async fn encrypt(&self, mut plaintext: ContentCipherBuffer, info: &[u8]) -> Vec<u8> {
+    pub async fn encrypt(
+        &self,
+        mut plaintext: ContentCipherBuffer,
+        usage: ContentCipherUsage,
+    ) -> Vec<u8> {
         *plaintext.parts_mut().nonce = rand::random();
 
-        let cipher = self.derive_cipher(info).await;
+        let cipher = self.derive_cipher(usage.info()).await;
         cipher.encrypt(plaintext, vec![]).await
     }
 
-    pub async fn decrypt_content(&self, nonce_and_ciphertext: Vec<u8>) -> Result<Bytes> {
-        self.decrypt(nonce_and_ciphertext, b"content").await
-    }
-
-    pub async fn decrypt_metadata(&self, nonce_and_ciphertext: Vec<u8>) -> Result<Bytes> {
-        self.decrypt(nonce_and_ciphertext, b"metadata").await
-    }
-
-    async fn decrypt(&self, nonce_and_ciphertext: Vec<u8>, info: &[u8]) -> Result<Bytes> {
+    pub async fn decrypt(
+        &self,
+        nonce_and_ciphertext: Vec<u8>,
+        usage: ContentCipherUsage,
+    ) -> Result<Bytes> {
         let nonce_and_ciphertext =
             ContentCipherBuffer::from_nonce_and_ciphertext(nonce_and_ciphertext)?;
 
-        let cipher = self.derive_cipher(info).await;
+        let cipher = self.derive_cipher(usage.info()).await;
         cipher.decrypt(nonce_and_ciphertext, vec![]).await
+    }
+
+    pub async fn decrypt_message<M: prost::Message + Default>(
+        &self,
+        nonce_and_ciphertext: Vec<u8>,
+        usage: ContentCipherUsage,
+    ) -> Result<M> {
+        // Converting to Bytes allows prost to zero-copy decode.
+        let message_data = Bytes::from(self.decrypt(nonce_and_ciphertext, usage).await?);
+        M::decode_length_delimited(message_data)
+            .map_err(|error| Error::InvalidPeerMessage { source: Box::new(error) })
     }
 }
 
@@ -156,6 +179,10 @@ mod buffer {
         pub payload: &'a mut [u8],
         #[cfg_attr(target_arch = "wasm32", allow(unused))]
         pub tag: &'a mut [u8; TAG_SIZE],
+    }
+
+    pub(crate) enum ContentCipherBufferPaddingType {
+        Zeroes { block_len: usize },
     }
 
     impl ContentCipherBuffer {
@@ -185,6 +212,40 @@ mod buffer {
             data.extend_from_slice(&[0; TAG_SIZE]);
 
             Self { data }
+        }
+
+        pub(crate) fn from_message_padded<M: prost::Message>(
+            message: &M,
+            padding_type: ContentCipherBufferPaddingType,
+        ) -> Self {
+            let unpadded_len = {
+                let encoded_message_len = message.encoded_len();
+                prost::length_delimiter_len(encoded_message_len) + encoded_message_len
+            };
+
+            match padding_type {
+                ContentCipherBufferPaddingType::Zeroes { block_len } => {
+                    // This is an inlined usize::next_multiple_of as of writing, which is currently unstable.
+                    let padded_len = match unpadded_len % block_len {
+                        0 => unpadded_len,
+                        r => unpadded_len + (block_len - r),
+                    };
+
+                    let mut data = Vec::with_capacity(NONCE_SIZE + padded_len + TAG_SIZE);
+                    // Fill with random data to guard against accidental nonce-reuse.
+                    data.extend_from_slice(&rand::random::<[u8; NONCE_SIZE]>());
+
+                    message
+                        .encode_length_delimited(&mut data)
+                        .expect("Buffer has enough capacity");
+                    // Fill in with zeroes up to the padded data length
+                    data.resize(NONCE_SIZE + padded_len, 0);
+
+                    data.extend_from_slice(&[0; TAG_SIZE]);
+
+                    Self { data }
+                }
+            }
         }
 
         pub(super) fn from_nonce_and_ciphertext(data: Vec<u8>) -> Result<Self> {

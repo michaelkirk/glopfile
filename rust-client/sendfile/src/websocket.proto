@@ -3,10 +3,16 @@ syntax = "proto3";
 package sendfile.websocket.protocol;
 
 message WebSocketMessage {
+  reserved 1; // inner.rtc_signaling
   oneof inner {
-    RtcSignalingMessage rtc_signaling = 1;
+    // RtcSignalingMessage rtc_signaling = 1;
     UploadDataAck upload_data_ack = 2;
+    EncryptedRtcSignalingMessage rtc_signaling = 3;
   }
+}
+
+message EncryptedRtcSignalingMessage {
+  bytes ciphertext = 1;
 }
 
 message RtcSignalingMessage {

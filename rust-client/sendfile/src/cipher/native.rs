@@ -18,7 +18,7 @@ pub struct NativeCipher {
 }
 
 #[async_trait::async_trait(?Send)]
-impl super::Cipher for NativeCipher {
+impl super::CipherImpl for NativeCipher {
     async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self {
         let mut aes_key = [0; KEY_SIZE];
         let hkdf = Hkdf::<Sha256>::new(None, base_key.bytes());
@@ -69,17 +69,19 @@ impl super::Cipher for NativeCipher {
 mod tests {
     use super::super::*;
 
+    use ContentCipherUsage::*;
+
     #[tokio::test]
     async fn roundtrip() {
         let cipher_key = CipherKey::random();
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
         let ciphertext = cipher
-            .encrypt_content(ContentCipherBuffer::from_plaintext(plaintext))
+            .encrypt(ContentCipherBuffer::from_plaintext(plaintext), Content)
             .await;
         assert_eq!(
             plaintext.to_vec(),
-            cipher.decrypt_content(ciphertext).await.unwrap()
+            cipher.decrypt(ciphertext, Content).await.unwrap()
         );
     }
 
@@ -89,10 +91,10 @@ mod tests {
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
         let mut ciphertext = cipher
-            .encrypt_content(ContentCipherBuffer::from_plaintext(plaintext))
+            .encrypt(ContentCipherBuffer::from_plaintext(plaintext), Content)
             .await;
         ciphertext[0] += 1;
-        assert!(cipher.decrypt_content(ciphertext).await.is_err());
+        assert!(cipher.decrypt(ciphertext, Content).await.is_err());
     }
 
     #[tokio::test]
@@ -101,9 +103,19 @@ mod tests {
         let cipher = ContentCipher::new(&cipher_key);
         let plaintext = b"Hello World";
         let ciphertext = cipher
-            .encrypt_content(ContentCipherBuffer::from_plaintext(plaintext))
+            .encrypt(ContentCipherBuffer::from_plaintext(plaintext), Content)
             .await;
-        assert!(cipher.decrypt_content(ciphertext.clone()).await.is_ok());
-        assert!(cipher.decrypt_metadata(ciphertext).await.is_err());
+
+        assert!(cipher.decrypt(ciphertext.clone(), Content).await.is_ok());
+
+        assert!(cipher.decrypt(ciphertext.clone(), Metadata).await.is_err());
+        assert!(cipher
+            .decrypt(ciphertext.clone(), DownloaderRtcSignaling)
+            .await
+            .is_err());
+        assert!(cipher
+            .decrypt(ciphertext, UploaderRtcSignaling)
+            .await
+            .is_err());
     }
 }
