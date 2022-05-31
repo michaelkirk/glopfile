@@ -6,8 +6,6 @@ import os
 struct AppView: View {
     @Environment(\.env) var env: AppEnvironment
 
-    @EnvironmentObject var sceneDelegate: SendfileSceneDelegate
-
     @State var uploadFileUrl: URL?
     @State var downloadUrl: URL?
     @State var uploadFilePickerPresented = false
@@ -51,8 +49,8 @@ struct AppView: View {
         .onOpenURL { url in
             openUrl(url: url)
         }
-        .onChange(of: sceneDelegate.openedUrl) { _ in
-            if let openedUrl = sceneDelegate.openedUrl {
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let openedUrl = activity.webpageURL {
                 openUrl(url: openedUrl)
             }
         }
