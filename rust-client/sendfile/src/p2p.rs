@@ -160,6 +160,7 @@ struct Timeout {
     timeout: Duration,
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 pub mod protocol {
     include!(concat!(env!("OUT_DIR"), "/sendfile.p2p.protocol.rs"));
 }

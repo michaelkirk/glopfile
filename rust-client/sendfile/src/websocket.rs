@@ -3,6 +3,7 @@ pub mod native;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
+#[allow(clippy::derive_partial_eq_without_eq)]
 pub mod protocol {
     include!(concat!(env!("OUT_DIR"), "/sendfile.websocket.protocol.rs"));
 }

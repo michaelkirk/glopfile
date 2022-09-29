@@ -153,7 +153,7 @@ impl ContentCipher {
         usage: ContentCipherUsage,
     ) -> Result<M> {
         // Converting to Bytes allows prost to zero-copy decode.
-        let message_data = Bytes::from(self.decrypt(nonce_and_ciphertext, usage).await?);
+        let message_data = self.decrypt(nonce_and_ciphertext, usage).await?;
         M::decode_length_delimited(message_data)
             .map_err(|error| Error::InvalidPeerMessage { source: Box::new(error) })
     }

@@ -79,6 +79,8 @@ pub(crate) trait IntoRetriableResultExt: Sized {
 
 pub(crate) trait AsRetriableResultExt: Sized {
     type Output;
+    // TODO We should probably rename to IntoRetriableResultExt, but that already exists...
+    #[allow(clippy::wrong_self_convention)]
     fn as_retriable_result(self) -> Result<Self::Output, backoff::Error<Error>>;
 }
 
@@ -145,7 +147,7 @@ where
     fn as_retriable_result(self) -> Result<T, backoff::Error<Error>> {
         self.map_err(Error::from).map_err(|error| match &error {
             Error::ClientHttpErrorResponse { retry_after: Some(retry_after), .. } => {
-                let retry_after = retry_after.clone();
+                let retry_after = *retry_after;
                 backoff::Error::retry_after(error, retry_after)
             }
             Error::ClientHttpErrorResponse { status, retry_after: None, .. } => {

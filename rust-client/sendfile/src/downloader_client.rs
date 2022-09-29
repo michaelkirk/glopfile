@@ -161,13 +161,14 @@ impl DownloaderClient {
             let connect_p2p_task = Self::connect_p2p(&mut p2p_client, state, None).fuse();
 
             {
+                // Make sure the relayed transfer terminates by moving its task into a new scope which will be
+                // dropped after the `select!`.
+                let relayed_task = relayed_task;
+
                 pin_mut!(connect_p2p_task, relayed_task);
                 futures::select! {
                     connect_p2p_result = connect_p2p_task => match connect_p2p_result {
-                        Ok(Continue(())) => {
-                            // Make sure the relayed transfer terminates.
-                            drop(relayed_task);
-                        }
+                        Ok(Continue(())) => (),
                         Ok(Break(())) => break Ok(()),
                         Err(error) => {
                             // Finish with relayed transfer
