@@ -1,19 +1,7 @@
-use futures::{Future, TryFutureExt};
-use js_sys::{Function, Promise};
+use js_sys::Function;
 use wasm_bindgen::convert::FromWasmAbi;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
-
-pub(crate) fn return_promise<F, T>(future: F) -> Promise
-where
-    F: Future<Output = Result<T, js_sys::Error>> + 'static,
-    T: Into<JsValue>,
-{
-    let future = future
-        .map_ok(|output| output.into())
-        .map_err(|error| error.into());
-    wasm_bindgen_futures::future_to_promise(future)
-}
 
 #[derive(Default)]
 pub(crate) struct Callbacks {
@@ -38,7 +26,7 @@ impl Callbacks {
         F: FnMut(E) + 'static,
         E: FromWasmAbi + 'static,
     {
-        let closure = Closure::wrap(Box::new(fun) as Box<dyn FnMut(E)>);
+        let closure = Closure::new(fun);
         add_fun(
             &receiver,
             Some(closure.as_ref().unchecked_ref::<Function>()),

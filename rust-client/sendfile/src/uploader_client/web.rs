@@ -4,13 +4,11 @@ use std::task;
 use std::task::Poll;
 use std::{io, mem};
 
-use futures::{pin_mut, ready, AsyncRead, FutureExt, TryStreamExt};
-use js_sys::{JsString, Promise, Uint8Array};
+use futures::{pin_mut, ready, AsyncRead, Future, FutureExt, TryStreamExt};
+use js_sys::{JsString, Uint8Array};
 use wasm_bindgen::{prelude::*, JsCast};
-use wasm_bindgen_futures::JsFuture;
 
 use crate::transport::Transport;
-use crate::util::web::return_promise;
 use crate::ProvisionedFile;
 
 use super::{UploadableFile, UploaderClient};
@@ -31,8 +29,12 @@ extern "C" {
     #[wasm_bindgen(method)]
     fn len(this: &WebUploadableFile) -> u64;
 
-    #[wasm_bindgen(method, js_name = readAt)]
-    fn read_at(this: &WebUploadableFile, offset: u64, len: u64) -> Promise;
+    #[wasm_bindgen(method, catch, js_name = readAt)]
+    async fn read_at(
+        this: &WebUploadableFile,
+        offset: u64,
+        len: u64,
+    ) -> Result<JsValue, js_sys::Error>;
 }
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -61,6 +63,8 @@ pub struct WebUploaderClient {
     client: Rc<UploaderClient>,
 }
 
+type PendingRead = Pin<Box<dyn Future<Output = Result<JsValue, js_sys::Error>>>>;
+
 struct UploadFile {
     file: WebUploadableFile,
     offset: u64,
@@ -69,7 +73,7 @@ struct UploadFile {
 
 enum UploadFileReadState {
     Idle,
-    Reading { pending_read: JsFuture },
+    Reading { pending_read: PendingRead },
     Available { data: Uint8Array },
 }
 
@@ -100,36 +104,37 @@ impl WebUploaderClient {
     }
 
     #[wasm_bindgen(js_name = provisionFile)]
-    pub fn provision_file(&self, file: WebUploadableFile, file_name: String) -> Promise {
+    pub async fn provision_file(
+        &self,
+        file: WebUploadableFile,
+        file_name: String,
+    ) -> Result<WebProvisionedFile, js_sys::Error> {
         let file_state = UploadFile { file, offset: 0, pending_read: Default::default() };
-        let client = Rc::clone(&self.client);
-        return_promise(async move {
-            let provisioned_file = client.provision_file_async(file_state, file_name).await?;
-            Ok(WebProvisionedFile { inner: Some(provisioned_file) })
-        })
+        let provisioned_file = self
+            .client
+            .provision_file_async(file_state, file_name)
+            .await?;
+        Ok(WebProvisionedFile { inner: Some(provisioned_file) })
     }
 
     #[wasm_bindgen(js_name = uploadFile)]
-    pub fn upload_file(
+    pub async fn upload_file(
         self,
         provisioned_file: &mut WebProvisionedFile,
         event_handler: Option<WebUploadEventHandler>,
-    ) -> Promise {
-        let client = Rc::clone(&self.client);
+    ) -> Result<(), js_sys::Error> {
         let provisioned_file = provisioned_file
             .inner
             .take()
             .expect("ProvisionedFile used after being consumed");
-        return_promise(async move {
-            let upload_progress = client.upload_provisioned_file_async(provisioned_file);
-            pin_mut!(upload_progress);
-            while let Some(progress_state) = upload_progress.try_next().await? {
-                if let Some(event_handler) = &event_handler {
-                    event_handler.upload_progress(progress_state.current, progress_state.total)?;
-                }
+        let upload_progress = self.client.upload_provisioned_file_async(provisioned_file);
+        pin_mut!(upload_progress);
+        while let Some(progress_state) = upload_progress.try_next().await? {
+            if let Some(event_handler) = &event_handler {
+                event_handler.upload_progress(progress_state.current, progress_state.total)?;
             }
-            Ok(JsValue::UNDEFINED)
-        })
+        }
+        Ok(())
     }
 }
 
@@ -166,10 +171,11 @@ impl AsyncRead for UploadFile {
                 let pending_read = match &mut self.pending_read {
                     UploadFileReadState::Reading { pending_read } => pending_read,
                     UploadFileReadState::Idle => {
-                        let read_promise = self
-                            .file
-                            .read_at(self.offset, buf.len().try_into().unwrap());
-                        self.pending_read.insert(read_promise.into())
+                        let file: WebUploadableFile = self.file.clone().into();
+                        let offset = self.offset;
+                        let len = buf.len().try_into().unwrap();
+                        let read_future = Box::pin(async move { file.read_at(offset, len).await });
+                        self.pending_read.insert(read_future)
                     }
                     UploadFileReadState::Available { .. } => unreachable!(),
                 };
@@ -205,7 +211,7 @@ impl Default for UploadFileReadState {
 }
 
 impl UploadFileReadState {
-    fn insert(&mut self, pending_read: JsFuture) -> &mut JsFuture {
+    fn insert(&mut self, pending_read: PendingRead) -> &mut PendingRead {
         *self = Self::Reading { pending_read };
         match self {
             Self::Reading { pending_read } => pending_read,
@@ -214,8 +220,8 @@ impl UploadFileReadState {
     }
 }
 
-impl From<JsValue> for UploadFileReadError {
-    fn from(from: JsValue) -> Self {
+impl From<js_sys::Error> for UploadFileReadError {
+    fn from(from: js_sys::Error) -> Self {
         let message = from
             .dyn_ref::<JsString>()
             .map(|string| format!("{string}"))
