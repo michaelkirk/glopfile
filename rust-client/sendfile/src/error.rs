@@ -187,3 +187,112 @@ where
         })
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use std::io;
+    use std::num::NonZeroU16;
+
+    use super::*;
+
+    /// How the retry loop should treat an error, flattened for comparison.
+    #[derive(Debug, PartialEq, Eq)]
+    enum Classified {
+        Permanent,
+        Transient,
+        After(Duration),
+    }
+
+    fn classify(error: Error) -> Classified {
+        match Result::<(), Error>::Err(error).as_retriable_result() {
+            Err(backoff::Error::Permanent(_)) => Classified::Permanent,
+            Err(backoff::Error::Transient { retry_after: Some(after), .. }) => {
+                Classified::After(after)
+            }
+            Err(backoff::Error::Transient { retry_after: None, .. }) => Classified::Transient,
+            Ok(()) => unreachable!("built from an Err"),
+        }
+    }
+
+    fn http(status: u16, retry_after: Option<Duration>) -> Error {
+        Error::ClientHttpErrorResponse { message: "test", status, retry_after }
+    }
+
+    fn closed(status: WebSocketCloseStatus) -> Error {
+        Error::WebSocketClosed { status, reason: "test".to_owned() }
+    }
+
+    #[test]
+    fn retry_after_wins_over_status() {
+        let after = Duration::from_secs(7);
+        assert_eq!(classify(http(503, Some(after))), Classified::After(after));
+        // even for statuses that would otherwise be permanent
+        assert_eq!(classify(http(429, Some(after))), Classified::After(after));
+        assert_eq!(classify(http(404, Some(after))), Classified::After(after));
+    }
+
+    #[test]
+    fn only_server_errors_are_retried() {
+        assert_eq!(classify(http(500, None)), Classified::Transient);
+        assert_eq!(classify(http(503, None)), Classified::Transient);
+        assert_eq!(classify(http(429, None)), Classified::Permanent);
+        assert_eq!(classify(http(404, None)), Classified::Permanent);
+        assert_eq!(classify(http(400, None)), Classified::Permanent);
+        // a status we can't even parse is not worth retrying
+        assert_eq!(classify(http(999, None)), Classified::Permanent);
+    }
+
+    #[test]
+    fn websocket_close_status_decides_reconnection() {
+        use WebSocketCloseStatus::Known;
+        use WebSocketKnownCloseStatus::*;
+
+        for status in [ConnectionClosed, InternalServerError, TlsError] {
+            assert_eq!(
+                classify(closed(Known(status))),
+                Classified::Transient,
+                "{status}"
+            );
+        }
+        for status in [
+            Normal,
+            Gone,
+            ProtocolError,
+            UnsupportedFrameType,
+            MissingStatusCode,
+            InvalidFrameData,
+            Forbidden,
+            FrameTooLarge,
+            MissingProtocolExtension,
+        ] {
+            assert_eq!(
+                classify(closed(Known(status))),
+                Classified::Permanent,
+                "{status}"
+            );
+        }
+
+        let unknown = WebSocketCloseStatus::Unknown(NonZeroU16::new(4000).unwrap());
+        assert_eq!(classify(closed(unknown)), Classified::Permanent);
+    }
+
+    #[test]
+    fn transport_failures_are_retried() {
+        assert_eq!(
+            classify(Error::IO { source: io::Error::other("nope") }),
+            Classified::Transient
+        );
+        assert_eq!(classify(Error::Timeout), Classified::Transient);
+    }
+
+    #[test]
+    fn client_side_failures_are_not_retried() {
+        assert_eq!(classify(Error::Decrypt), Classified::Permanent);
+        assert_eq!(classify(Error::InvalidCipherKey), Classified::Permanent);
+        assert_eq!(classify(Error::InvalidInput("test")), Classified::Permanent);
+        assert_eq!(
+            classify(Error::InvalidServerResponse("test")),
+            Classified::Permanent
+        );
+    }
+}
