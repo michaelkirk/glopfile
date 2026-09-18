@@ -5,4 +5,4 @@ pub mod ffi {
     include!(concat!(env!("OUT_DIR"), "/lib.uniffi.rs"));
 }
 
-pub use sendfile::ffi::*;
+pub use glopfile::ffi::*;

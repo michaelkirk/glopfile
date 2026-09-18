@@ -9,10 +9,10 @@ crate_type = ["staticlib"]
 
 [dependencies]
 log = "0.4.14"
-sendfile = { path = "../../rust-client/sendfile", features = ["ffi"] }
+glopfile = { path = "../../rust-client/glopfile", features = ["ffi"] }
 uniffi = "0.18.0"
 
 [build-dependencies]
-sendfile-ffi-bindings = { path = "../../rust-client/sendfile-ffi-bindings" }
+glopfile-ffi-bindings = { path = "../../rust-client/glopfile-ffi-bindings" }
 uniffi_build = { version = "0.18.0", features = ["builtin-bindgen"] }
 uniffi_bindgen = "0.18.0"

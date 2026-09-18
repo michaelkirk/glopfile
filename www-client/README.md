@@ -1,5 +1,5 @@
-[./sendfile] is TypeScript library for sending and receiving files.
-[./sendfile-ui] is a React-powered user interface on top of the sendfile library.
+[./glopfile] is TypeScript library for sending and receiving files.
+[./glopfile-ui] is a React-powered user interface on top of the glopfile library.
 
 ## Development
 
@@ -8,18 +8,18 @@
 
     cargo install wasm-pack
     wasm-pack build rust
-    (cd sendfile && yarn install && yarn tsc)
-    (cd sendfile-ui && yarn install)
+    (cd glopfile && yarn install && yarn tsc)
+    (cd glopfile-ui && yarn install)
 
-### Link to local sendfile
+### Link to local glopfile
 
-While developing, you probably want to see subsequent changes in sendfile
-reflected in sendfile-ui. After completing the steps above, you can replace
-the static copy of sendfile with a symlink like this:
+While developing, you probably want to see subsequent changes in glopfile
+reflected in glopfile-ui. After completing the steps above, you can replace
+the static copy of glopfile with a symlink like this:
 
-    rm -fr sendfile-ui/node_modules/sendfile
-    ln -s -r sendfile sendfile-ui/node_modules
+    rm -fr glopfile-ui/node_modules/glopfile
+    ln -s -r glopfile glopfile-ui/node_modules
 
 ### Start the app server
 
-    cd sendfile-ui && yarn start
+    cd glopfile-ui && yarn start

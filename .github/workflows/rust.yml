@@ -21,16 +21,16 @@ jobs:
 
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy -p sendfile --target wasm32-unknown-unknown --no-default-features -- -D warnings
-      - run: cargo clippy -p sendfile --features ffi --all-targets -- -D warnings
+      - run: cargo clippy -p glopfile --target wasm32-unknown-unknown --no-default-features -- -D warnings
+      - run: cargo clippy -p glopfile --features ffi --all-targets -- -D warnings
 
       # The client's round-trip tests talk to a relay on :8080, the default
-      # baked in when TEST_SENDFILE_API_ENDPOINT is unset. Now that both live
+      # baked in when TEST_GLOPFILE_API_ENDPOINT is unset. Now that both live
       # in this repo we can give them a real one rather than let them fail.
       - name: start the relay
         run: |
-          cargo build -p sendfile-relay --bin sendfile
-          SENDFILE_LISTEN=127.0.0.1:8080 ./target/debug/sendfile &
+          cargo build -p glopfile-relay --bin glopfile-relay
+          GLOPFILE_LISTEN=127.0.0.1:8080 ./target/debug/glopfile-relay &
           for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8080/api/v1/health_check >/dev/null && exit 0
             sleep 1

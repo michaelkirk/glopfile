@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  package_name: sendfile-cli
+  package_name: glopfile-cli
 
 # gh release create/upload writes to the repo.
 permissions:
@@ -47,8 +47,8 @@ jobs:
 
       - name: cargo build --profile distribution
         env:
-          SENDFILE_API_ENDPOINT: ${{ secrets.SENDFILE_API_ENDPOINT }}
-          SENDFILE_DOWNLOAD_ENDPOINT: ${{ secrets.SENDFILE_DOWNLOAD_ENDPOINT }}
+          GLOPFILE_API_ENDPOINT: ${{ secrets.GLOPFILE_API_ENDPOINT }}
+          GLOPFILE_DOWNLOAD_ENDPOINT: ${{ secrets.GLOPFILE_DOWNLOAD_ENDPOINT }}
         run: cargo build --profile distribution --target=${{ matrix.target }} -p $package_name
 
       - name: assemble archive

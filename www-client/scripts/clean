@@ -4,6 +4,6 @@ set -e
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd $REPO_ROOT
 
-rm -fr sendfile-ui/build
-rm -fr sendfile/dist
+rm -fr glopfile-ui/build
+rm -fr glopfile/dist
 

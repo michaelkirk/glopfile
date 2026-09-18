@@ -27,10 +27,10 @@ jobs:
       # only main is published.
       - uses: docker/build-push-action@v6
         with:
-          context: api-server
+          context: glopfile-relay
           load: ${{ github.ref != 'refs/heads/main' }}
           push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ghcr.io/${{ github.repository_owner }}/sendfile:latest
+          tags: ghcr.io/${{ github.repository_owner }}/glopfile:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -38,7 +38,7 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: |
           docker run -d --name relay -p 127.0.0.1:8080:8080 \
-            ghcr.io/${{ github.repository_owner }}/sendfile:latest
+            ghcr.io/${{ github.repository_owner }}/glopfile:latest
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/api/v1/health_check | grep -q '"ok"'; then
               docker rm -f relay

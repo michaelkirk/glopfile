@@ -6,7 +6,7 @@ repo; nothing here publishes on a public interface.
 
 ## hemlock
 
-hemlock is deployed by ansible, not by the script below: the `sendfile` role in
+hemlock is deployed by ansible, not by the script below: the `glopfile` role in
 `hemlock-ansible` owns the compose file, the unit and the caddy vhost, and
 serves the relay at `api.s.endoftheworl.de`. The web client is the static site
 at `s.endoftheworl.de`. Re-running that playbook deploys a new image.
@@ -18,22 +18,22 @@ What follows is the generic path, for a host ansible does not manage.
 On the host, as root:
 
 ```sh
-deploy/bin/deploy --image ghcr.io/<owner>/sendfile:latest --port 8080
+deploy/bin/deploy --image ghcr.io/<owner>/glopfile:latest --port 8080
 ```
 
-That pulls the image, installs `/opt/sendfile/docker-compose.yml` and
-`/etc/systemd/system/sendfile-relay.service`, seeds `/etc/sendfile/relay.env` on
+That pulls the image, installs `/opt/glopfile/docker-compose.yml` and
+`/etc/systemd/system/glopfile-relay.service`, seeds `/etc/glopfile/relay.env` on
 first run, restarts the unit, and waits for `/api/v1/health_check` to answer
 before reporting success. It is idempotent — re-run it to deploy a new image.
 
 Afterwards:
 
 ```sh
-systemctl status sendfile-relay
-journalctl -u sendfile-relay -f
+systemctl status glopfile-relay
+journalctl -u glopfile-relay -f
 ```
 
-Configuration is `/etc/sendfile/relay.env`; see
+Configuration is `/etc/glopfile/relay.env`; see
 [`production/relay.env.example`](production/relay.env.example). The deploy script
 preserves values already set there.
 

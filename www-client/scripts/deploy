@@ -12,6 +12,6 @@ DESTINATION=$DEPLOY_ROOT/versions/$DEPLOY_NAME
 
 ssh $HOST mkdir -p $DEPLOY_ROOT/versions
 
-rsync -avz --progress sendfile-ui/build/ $HOST:$DESTINATION
+rsync -avz --progress glopfile-ui/build/ $HOST:$DESTINATION
 ssh $HOST "ln -sfn '${DESTINATION}' '${DEPLOY_ROOT}/current'"
 

@@ -3,5 +3,5 @@ set -e
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 
-(cd $REPO_ROOT/sendfile-ui && yarn prettier --write .)
-(cd $REPO_ROOT/sendfile && yarn prettier --write .)
+(cd $REPO_ROOT/glopfile-ui && yarn prettier --write .)
+(cd $REPO_ROOT/glopfile && yarn prettier --write .)

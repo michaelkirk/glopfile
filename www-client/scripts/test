@@ -4,4 +4,4 @@ set -e
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd $REPO_ROOT
 
-(cd sendfile-ui && CI=true yarn test)
+(cd glopfile-ui && CI=true yarn test)

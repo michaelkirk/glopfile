@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package glopfile.websocket.protocol;
+
+message WebSocketMessage {
+  reserved 1; // inner.rtc_signaling
+  oneof inner {
+    // RtcSignalingMessage rtc_signaling = 1;
+    UploadDataAck upload_data_ack = 2;
+    EncryptedRtcSignalingMessage rtc_signaling = 3;
+  }
+}
+
+message EncryptedRtcSignalingMessage {
+  bytes ciphertext = 1;
+}
+
+message RtcSignalingMessage {
+  oneof inner {
+    IceCandidate ice_candidate = 1;
+    SessionDescription session_description = 2;
+  }
+}
+
+message IceCandidate {
+  string candidate = 1;
+  string mid = 2;
+}
+
+message SessionDescription {
+  string sdp = 1;
+  SessionDescriptionType sdp_type = 2;
+}
+
+enum SessionDescriptionType {
+  ANSWER = 0;
+  OFFER = 1;
+  PRANSWER = 2;
+  ROLLBACK = 3;
+}
+
+message UploadDataAck {
+  uint64 offset = 1;
+}

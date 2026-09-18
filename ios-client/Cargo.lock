@@ -909,6 +909,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "glopfile"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "backon",
+ "base64 0.23.1",
+ "bytes",
+ "cfg-if",
+ "crossbeam-utils",
+ "datachannel",
+ "derive_more",
+ "futures",
+ "getrandom 0.4.3",
+ "gloo-timers 0.4.0",
+ "glopfile-macros",
+ "hkdf",
+ "http",
+ "js-sys",
+ "log",
+ "num_enum",
+ "pin-project",
+ "prost",
+ "prost-build",
+ "rand",
+ "reqwest",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tungstenite",
+ "uniffi 0.32.1",
+ "uniffi_build 0.32.1",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "webrtc-sdp",
+ "zeroize",
+]
+
+[[package]]
+name = "glopfile-ffi-bindings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "camino",
+ "uniffi_bindgen 0.32.1",
+]
+
+[[package]]
+name = "glopfile-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "goblin"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2126,81 +2192,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "sendfile"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "backon",
- "base64 0.23.1",
- "bytes",
- "cfg-if",
- "crossbeam-utils",
- "datachannel",
- "derive_more",
- "futures",
- "getrandom 0.4.3",
- "gloo-timers 0.4.0",
- "hkdf",
- "http",
- "js-sys",
- "log",
- "num_enum",
- "pin-project",
- "prost",
- "prost-build",
- "rand",
- "reqwest",
- "scopeguard",
- "sendfile-macros",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.20",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "tokio-util",
- "tungstenite",
- "uniffi 0.32.1",
- "uniffi_build 0.32.1",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "web-time",
- "webrtc-sdp",
- "zeroize",
-]
-
-[[package]]
-name = "sendfile-ffi-bindings"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "camino",
- "uniffi_bindgen 0.32.1",
-]
-
-[[package]]
 name = "sendfile-ios-rust"
 version = "0.1.0"
 dependencies = [
+ "glopfile",
+ "glopfile-ffi-bindings",
  "log",
- "sendfile",
- "sendfile-ffi-bindings",
  "uniffi 0.18.0",
  "uniffi_bindgen 0.18.0",
  "uniffi_build 0.18.0",
-]
-
-[[package]]
-name = "sendfile-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
 ]
 
 [[package]]

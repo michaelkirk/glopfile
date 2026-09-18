@@ -17,13 +17,13 @@ use std::{io, iter, mem};
 
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
+use glopfile::{DownloaderClient, ProgressState, Transport, UploaderClient};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use sendfile::{DownloaderClient, ProgressState, Transport, UploaderClient};
 use url::Url;
 
 #[derive(Parser)]
-#[clap(name = "sendfile")]
-#[clap(bin_name = "sendfile")]
+#[clap(name = "glopfile")]
+#[clap(bin_name = "glopfile")]
 #[clap(about = "send a file!", long_about = None)]
 struct Args {
     #[clap(subcommand)]
@@ -106,13 +106,13 @@ impl Cli {
         no_p2p: bool,
         no_relay: bool,
     ) -> Result<()> {
-        let default_api_endpoint = option_env!("SENDFILE_API_ENDPOINT")
+        let default_api_endpoint = option_env!("GLOPFILE_API_ENDPOINT")
             .unwrap_or("http://localhost:8080")
             .parse()
             .expect("invalid hardcoded url");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
-        let default_download_endpoint = option_env!("SENDFILE_DOWNLOAD_ENDPOINT")
+        let default_download_endpoint = option_env!("GLOPFILE_DOWNLOAD_ENDPOINT")
             .unwrap_or("http://localhost:3000")
             .parse()
             .expect("invalid hardcoded url");
@@ -194,7 +194,7 @@ impl Cli {
         no_p2p: bool,
         no_relay: bool,
     ) -> Result<()> {
-        let default_api_endpoint = option_env!("SENDFILE_API_ENDPOINT")
+        let default_api_endpoint = option_env!("GLOPFILE_API_ENDPOINT")
             .unwrap_or("http://localhost:8080")
             .parse()
             .expect("invalid hardcoded url");

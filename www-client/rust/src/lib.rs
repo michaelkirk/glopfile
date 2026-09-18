@@ -3,7 +3,7 @@ use wasm_bindgen::prelude::*;
 #[macro_use]
 extern crate log;
 
-pub use sendfile::{UploadableFile, UploaderClient};
+pub use glopfile::{UploadableFile, UploaderClient};
 
 #[wasm_bindgen(start)]
 pub fn init() -> Result<(), JsValue> {

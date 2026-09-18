@@ -19,4 +19,4 @@
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 cd $SCRIPT_DIR/..
-RUST_LOG=sendfile=info cargo run -- send example-file $UPLOAD_OPTIONS | tee >(export RUST_LOG=sendfile=info; head -n 1 | sed "s/.*download at: //" | xargs cargo run -- receive $DOWNLOAD_OPTIONS 2>&1 | sed "s/^/[recipient] /")
+RUST_LOG=glopfile=info cargo run -- send example-file $UPLOAD_OPTIONS | tee >(export RUST_LOG=glopfile=info; head -n 1 | sed "s/.*download at: //" | xargs cargo run -- receive $DOWNLOAD_OPTIONS 2>&1 | sed "s/^/[recipient] /")

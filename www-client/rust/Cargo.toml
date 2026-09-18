@@ -1,5 +1,5 @@
 [package]
-name = "sendfile-www-rust"
+name = "glopfile-www-rust"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,7 +10,7 @@ crate-type = ["cdylib"]
 console_error_panic_hook = "0.1.7"
 console_log = { version = "0.2.0", features = ["color"] }
 log = "0.4.14"
-sendfile = { path = "../../rust-client/sendfile" }
+glopfile = { path = "../../rust-client/glopfile" }
 wasm-bindgen = "0.2.79"
 
 # enable the js feature in getrandom (see https://docs.rs/getrandom/latest/getrandom/#webassembly-support).

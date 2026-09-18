@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "api-server",
+    "glopfile-relay",
     "rust-client/cli",
     "rust-client/macros",
-    "rust-client/sendfile",
-    "rust-client/sendfile-ffi-bindings",
+    "rust-client/glopfile",
+    "rust-client/glopfile-ffi-bindings",
 ]
 # ios-client and www-client build bundles of their own, against their own pinned
 # toolchains. .worktrees holds git worktrees of this repo, whose packages belong
@@ -46,8 +46,8 @@ quote = "1.0.47"
 rand = "0.10.2"
 reqwest = "0.13.5"
 scopeguard = "1.2.0"
-sendfile = { path = "rust-client/sendfile" }
-sendfile-macros = { path = "rust-client/macros" }
+glopfile = { path = "rust-client/glopfile" }
+glopfile-macros = { path = "rust-client/macros" }
 serde = "1.0.229"
 serde_json = "1.0.151"
 sha2 = "0.11.0"
@@ -72,9 +72,9 @@ web-time = "1.1.0"
 webrtc-sdp = "0.3.15"
 zeroize = "1.9"
 
-# Only use the strip option for sendfile-cli, since it is only stable since Cargo 1.59.0, and Cargo before that will
+# Only use the strip option for glopfile-cli, since it is only stable since Cargo 1.59.0, and Cargo before that will
 # then fail to compile _any_ of our workspace packages with any profile if we specify it globally.
-[profile.distribution.package.sendfile-cli]
+[profile.distribution.package.glopfile-cli]
 strip = true
 
 [profile.distribution]

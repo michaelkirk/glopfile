@@ -1094,6 +1094,108 @@ dependencies = [
 ]
 
 [[package]]
+name = "glopfile"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "async-trait",
+ "backon",
+ "base64 0.23.1",
+ "bytes",
+ "cfg-if",
+ "crossbeam-utils",
+ "datachannel",
+ "derive_more",
+ "futures",
+ "getrandom 0.4.3",
+ "gloo-timers 0.4.0",
+ "glopfile-macros",
+ "hkdf",
+ "http",
+ "js-sys",
+ "log",
+ "num_enum",
+ "pin-project",
+ "pretty_env_logger",
+ "prost",
+ "prost-build",
+ "rand 0.10.2",
+ "reqwest",
+ "scopeguard",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite 0.30.0",
+ "tokio-util",
+ "tungstenite 0.30.0",
+ "uniffi",
+ "uniffi_build",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "webrtc-sdp",
+ "zeroize",
+]
+
+[[package]]
+name = "glopfile-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crossbeam",
+ "glopfile",
+ "indicatif",
+ "pretty_env_logger",
+ "url",
+]
+
+[[package]]
+name = "glopfile-ffi-bindings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "camino",
+ "uniffi_bindgen",
+]
+
+[[package]]
+name = "glopfile-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "glopfile-relay"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64 0.23.1",
+ "bytes",
+ "futures",
+ "prost",
+ "prost-build",
+ "protox",
+ "rand 0.10.2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.30.0",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "goblin"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2494,108 +2596,6 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 dependencies = [
  "serde",
  "serde_core",
-]
-
-[[package]]
-name = "sendfile"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "backon",
- "base64 0.23.1",
- "bytes",
- "cfg-if",
- "crossbeam-utils",
- "datachannel",
- "derive_more",
- "futures",
- "getrandom 0.4.3",
- "gloo-timers 0.4.0",
- "hkdf",
- "http",
- "js-sys",
- "log",
- "num_enum",
- "pin-project",
- "pretty_env_logger",
- "prost",
- "prost-build",
- "rand 0.10.2",
- "reqwest",
- "scopeguard",
- "sendfile-macros",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite 0.30.0",
- "tokio-util",
- "tungstenite 0.30.0",
- "uniffi",
- "uniffi_build",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "web-time",
- "webrtc-sdp",
- "zeroize",
-]
-
-[[package]]
-name = "sendfile-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crossbeam",
- "indicatif",
- "pretty_env_logger",
- "sendfile",
- "url",
-]
-
-[[package]]
-name = "sendfile-ffi-bindings"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "camino",
- "uniffi_bindgen",
-]
-
-[[package]]
-name = "sendfile-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "sendfile-relay"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64 0.23.1",
- "bytes",
- "futures",
- "prost",
- "prost-build",
- "protox",
- "rand 0.10.2",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tokio-tungstenite 0.30.0",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

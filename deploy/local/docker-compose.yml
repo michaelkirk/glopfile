@@ -2,10 +2,10 @@
 services:
   relay:
     build:
-      context: ../../api-server
+      context: ../../glopfile-relay
     ports:
-      - "127.0.0.1:${SENDFILE_PORT:-8080}:8080"
+      - "127.0.0.1:${GLOPFILE_PORT:-8080}:8080"
     environment:
-      SENDFILE_LISTEN: 0.0.0.0:8080
-      RUST_LOG: ${RUST_LOG:-sendfile=debug,info}
+      GLOPFILE_LISTEN: 0.0.0.0:8080
+      RUST_LOG: ${RUST_LOG:-glopfile=debug,info}
     restart: unless-stopped

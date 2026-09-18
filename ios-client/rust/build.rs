@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use sendfile_ffi_bindings::bindings::TargetLanguage;
+use glopfile_ffi_bindings::bindings::TargetLanguage;
 
 const OUT_DIR: &str = "../Sendfile/src/FFI/Rust/SendfileRustFFI";
 
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         true,
     )?;
 
-    sendfile_ffi_bindings::write_bindings(
+    glopfile_ffi_bindings::write_bindings(
         Some("uniffi.sendfile.toml"),
         OUT_DIR,
         TargetLanguage::Swift,

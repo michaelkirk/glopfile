@@ -26,12 +26,12 @@ jobs:
 
       - run: mkdir -p docs/native docs/web
 
-      # sendfile and sendfile-ffi-bindings are the published client API. The
+      # glopfile and glopfile-ffi-bindings are the published client API. The
       # relay, the CLI and the macro crate are not what these docs are for.
       - name: render native docs
         run: |
           cargo doc --lib --workspace --no-deps \
-            --exclude sendfile-macros --exclude sendfile-cli --exclude sendfile-relay
+            --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
           mv target/doc/ docs/native/public/
           cargo doc --lib --workspace --no-deps --document-private-items
           mv target/doc/ docs/native/private/
@@ -39,7 +39,7 @@ jobs:
       - name: render web docs
         run: |
           cargo doc --lib --workspace --no-deps --target wasm32-unknown-unknown \
-            --exclude sendfile-macros --exclude sendfile-cli --exclude sendfile-relay
+            --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
           mv target/wasm32-unknown-unknown/doc/ docs/web/public/
           cargo doc --lib --workspace --no-deps --document-private-items --target wasm32-unknown-unknown
           mv target/wasm32-unknown-unknown/doc/ docs/web/private/

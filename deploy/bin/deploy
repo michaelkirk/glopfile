@@ -8,9 +8,9 @@
 # stale, and restarts the service. Run it on the host, as root.
 set -euo pipefail
 
-INSTALL_DIR=/opt/sendfile
-CONFIG_DIR=/etc/sendfile
-UNIT=sendfile-relay.service
+INSTALL_DIR=/opt/glopfile
+CONFIG_DIR=/etc/glopfile
+UNIT=glopfile-relay.service
 SOURCE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../production" && pwd)
 
 image=""
@@ -45,8 +45,8 @@ set_env() {
     printf '%s=%s\n' "$key" "$value" >> "$CONFIG_DIR/relay.env"
   fi
 }
-set_env SENDFILE_IMAGE "$image"
-set_env SENDFILE_PORT "$port"
+set_env GLOPFILE_IMAGE "$image"
+set_env GLOPFILE_PORT "$port"
 
 systemctl daemon-reload
 systemctl enable "$UNIT" >/dev/null
@@ -55,7 +55,7 @@ systemctl enable "$UNIT" >/dev/null
 systemctl restart "$UNIT"
 
 echo "waiting for the relay to answer..."
-listen_port=$(grep -E '^SENDFILE_PORT=' "$CONFIG_DIR/relay.env" | cut -d= -f2)
+listen_port=$(grep -E '^GLOPFILE_PORT=' "$CONFIG_DIR/relay.env" | cut -d= -f2)
 listen_port=${listen_port:-8080}
 for _ in $(seq 1 30); do
   if curl -fsS "http://127.0.0.1:${listen_port}/api/v1/health_check" >/dev/null 2>&1; then
