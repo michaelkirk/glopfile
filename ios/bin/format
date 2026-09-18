@@ -1,0 +1,2 @@
+# Ignore the FFI directory, which is generated code
+swift-format -ir Sendfile/src/{Constants.swift,Environment,SendfileApp.swift,UI,Utilities}

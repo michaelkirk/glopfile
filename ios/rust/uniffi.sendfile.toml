@@ -1,0 +1,5 @@
+[bindings.swift]
+generate_module_map = false
+module_name = "SendfileLibRust"
+ffi_module_name = "SendfileRustFFI"
+ffi_module_filename = "SendfileLibRustFFI"
