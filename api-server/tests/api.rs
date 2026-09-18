@@ -651,3 +651,49 @@ async fn upload_past_the_end_waits_for_the_downloader_to_finish() {
     assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
     assert!(download.await.unwrap().bytes().await.unwrap().is_empty());
 }
+
+/// Walks the exact request sequence rust-client's `upload_file` performs: ask
+/// `/start` where to resume, POST the content there, then read the status body.
+#[tokio::test]
+async fn rust_client_upload_sequence() {
+    let server = Server::start().await;
+    let id = server.provision().await;
+
+    let content_url = server.url(&format!("/api/v1/download/{id}/content"));
+    let client = server.client.clone();
+    let download = tokio::spawn(async move { client.get(content_url).send().await.unwrap() });
+    settle().await;
+
+    let size = CONTENT.len();
+    let position = 0usize;
+
+    let start = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{id}/start")))
+        .form(&[("position", position)])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(start.status(), StatusCode::OK);
+    assert_eq!(start.json::<Value>().await.unwrap()["status"], "ok");
+
+    let content_range = if position < size {
+        format!("bytes {position}-{}/{size}", size - 1)
+    } else {
+        format!("bytes */{size}")
+    };
+    let response = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{id}")))
+        .header(header::CONTENT_RANGE, content_range)
+        .body(&CONTENT[position..])
+        .send()
+        .await
+        .unwrap();
+
+    assert_ne!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
+
+    assert_eq!(download.await.unwrap().bytes().await.unwrap(), CONTENT);
+}
