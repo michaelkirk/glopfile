@@ -1,6 +1,6 @@
 use datachannel::{
-    ConnectionState, DataChannelHandler, DataChannelInit, GatheringState, IceCandidate,
-    PeerConnectionHandler, RtcConfig, RtcDataChannel, RtcPeerConnection, SdpType,
+    ConnectionState, DataChannelHandler, DataChannelInfo, DataChannelInit, GatheringState,
+    IceCandidate, PeerConnectionHandler, RtcConfig, RtcDataChannel, RtcPeerConnection, SdpType,
     SessionDescription, SignalingState,
 };
 use webrtc_sdp::error::SdpParserError;
@@ -130,7 +130,7 @@ impl DataChannelHandler for NoopDataChannelHandler {}
 impl PeerConnectionHandler for NativePeerConnectionHandler {
     type DCH = NoopDataChannelHandler;
 
-    fn data_channel_handler(&mut self) -> Self::DCH {
+    fn data_channel_handler(&mut self, _info: DataChannelInfo) -> Self::DCH {
         NoopDataChannelHandler
     }
 
