@@ -18,7 +18,7 @@ use std::{io, iter, mem};
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
 use glopfile::{DownloaderClient, ProgressState, Transport, UploaderClient};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{HumanBytes, MultiProgress, ProgressBar, ProgressStyle};
 use url::Url;
 
 #[derive(Parser)]
@@ -229,6 +229,7 @@ impl Cli {
         let decrypt_spinner = multi_progress
             .add(ProgressBar::new_spinner().with_message(format!("Decrypting {file_name}...")));
 
+        let started_at = Instant::now();
         let (progress_tx, progress_rx) = mpsc::channel();
         crossbeam::scope(|scope| {
             let progress_thread = scope.spawn(|_scope| {
@@ -252,7 +253,25 @@ impl Cli {
         })
         .unwrap_or_else(|panic| resume_unwind(panic))?;
 
+        eprintln!(
+            "Successfully downloaded {file_name} ({} in {})",
+            HumanBytes(meta.file_meta.file_size),
+            format_elapsed(started_at.elapsed()),
+        );
+
         Ok(())
+    }
+}
+
+fn format_elapsed(elapsed: Duration) -> String {
+    let seconds = elapsed.as_secs();
+    let (hours, minutes, seconds) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    if hours > 0 {
+        format!("{hours}h{minutes:02}m{seconds:02}s")
+    } else if minutes > 0 {
+        format!("{minutes}m{seconds:02}s")
+    } else {
+        format!("{:.1}s", elapsed.as_secs_f64())
     }
 }
 
