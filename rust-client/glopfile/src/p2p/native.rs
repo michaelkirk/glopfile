@@ -13,6 +13,7 @@ pub enum NativeRtc {}
 
 pub struct NativePeerConnection {
     rtc: Box<RtcPeerConnection<NativePeerConnectionHandler>>,
+    local_description_type: Option<websocket::SessionDescriptionType>,
 }
 
 pub struct NativeDataChannel {
@@ -50,7 +51,7 @@ impl super::Rtc for NativeRtc {
         let peer_connection =
             RtcPeerConnection::new(&rtc_config, peer_connection_handler).map_err(Error::rtc_err)?;
 
-        Ok(NativePeerConnection { rtc: peer_connection })
+        Ok(NativePeerConnection { rtc: peer_connection, local_description_type: None })
     }
 }
 
@@ -80,13 +81,17 @@ impl super::RtcPeerConnection for NativePeerConnection {
     async fn create_offer(&mut self) -> Result<(), Error> {
         self.rtc
             .set_local_description(SdpType::Offer)
-            .map_err(Error::rtc_err)
+            .map_err(Error::rtc_err)?;
+        self.local_description_type = Some(websocket::SessionDescriptionType::Offer);
+        Ok(())
     }
 
     async fn create_answer(&mut self) -> Result<(), Error> {
         self.rtc
             .set_local_description(SdpType::Answer)
-            .map_err(Error::rtc_err)
+            .map_err(Error::rtc_err)?;
+        self.local_description_type = Some(websocket::SessionDescriptionType::Answer);
+        Ok(())
     }
 
     async fn set_remote_description(
@@ -100,9 +105,7 @@ impl super::RtcPeerConnection for NativePeerConnection {
     }
 
     fn local_description_type(&self) -> Option<websocket::SessionDescriptionType> {
-        self.rtc
-            .local_description()
-            .map(|sdp| (&sdp.sdp_type).into())
+        self.local_description_type
     }
 
     async fn add_remote_candidate(
