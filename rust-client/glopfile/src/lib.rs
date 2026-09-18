@@ -68,10 +68,15 @@ fn init_test_logging() {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+    use std::sync::mpsc::{self, RecvTimeoutError};
     use std::{fs, path::Path, time::Duration};
 
     const TEST_FIXTURES_DIR: &str = "test_fixtures/";
     const SAMPLE_FILE_NAME: &str = "sample_file.txt";
+
+    /// A local transfer that takes longer than this has stalled.
+    const ROUND_TRIP_TIMEOUT: Duration = Duration::from_secs(10);
 
     struct RoundTripTest {
         uploader_transport: Transport,
@@ -79,7 +84,24 @@ mod tests {
         downloader_p2p_timeout: Option<Duration>,
     }
     impl RoundTripTest {
-        fn run(&self) {
+        /// Fails the test instead of hanging forever when a transfer stalls.
+        fn run(self) {
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let result = catch_unwind(AssertUnwindSafe(|| self.transfer()));
+                let _ignore = tx.send(result);
+            });
+
+            match rx.recv_timeout(ROUND_TRIP_TIMEOUT) {
+                Ok(Ok(())) => (),
+                Ok(Err(panic)) => resume_unwind(panic),
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                    panic!("transfer did not finish within {ROUND_TRIP_TIMEOUT:?}")
+                }
+            }
+        }
+
+        fn transfer(&self) {
             init_test_logging();
 
             let uploader = UploaderClient::new_testing(self.uploader_transport);
