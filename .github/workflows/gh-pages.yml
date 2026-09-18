@@ -1,0 +1,53 @@
+name: gh-pages
+
+on:
+  push:
+    branches:
+      - main
+      - gh-pages-source
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# The docs are published by force-pushing a branch.
+permissions:
+  contents: write
+
+jobs:
+  gh-pages:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - run: mkdir -p docs/native docs/web
+
+      # sendfile and sendfile-ffi-bindings are the published client API. The
+      # relay, the CLI and the macro crate are not what these docs are for.
+      - name: render native docs
+        run: |
+          cargo doc --lib --workspace --no-deps \
+            --exclude sendfile-macros --exclude sendfile-cli --exclude sendfile-relay
+          mv target/doc/ docs/native/public/
+          cargo doc --lib --workspace --no-deps --document-private-items
+          mv target/doc/ docs/native/private/
+
+      - name: render web docs
+        run: |
+          cargo doc --lib --workspace --no-deps --target wasm32-unknown-unknown \
+            --exclude sendfile-macros --exclude sendfile-cli --exclude sendfile-relay
+          mv target/wasm32-unknown-unknown/doc/ docs/web/public/
+          cargo doc --lib --workspace --no-deps --document-private-items --target wasm32-unknown-unknown
+          mv target/wasm32-unknown-unknown/doc/ docs/web/private/
+
+      - name: push docs to gh-pages
+        run: |
+          git config user.name "Github CI -- gh-pages"
+          git config user.email "<>"
+          git add docs
+          git commit -m "render rustdocs"
+          git push -f origin HEAD:gh-pages

@@ -1,0 +1,73 @@
+name: release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  package_name: sendfile-cli
+
+# gh release create/upload writes to the repo.
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            platform: macos
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install cargo-about
+        run: cargo install cargo-about --locked
+
+      # about.toml and the template live with the crate they describe.
+      - name: generate Acknowledgements.md
+        working-directory: rust-client
+        run: cargo about generate Acknowledgements.md.hbs -o Acknowledgements.md
+
+      - name: set package_version
+        run: echo "package_version=$(cargo pkgid --package $package_name | sed 's/.*[#@]//')" >> "$GITHUB_ENV"
+
+      - name: cargo build --profile distribution
+        env:
+          SENDFILE_API_ENDPOINT: ${{ secrets.SENDFILE_API_ENDPOINT }}
+          SENDFILE_DOWNLOAD_ENDPOINT: ${{ secrets.SENDFILE_DOWNLOAD_ENDPOINT }}
+        run: cargo build --profile distribution --target=${{ matrix.target }} -p $package_name
+
+      - name: assemble archive
+        run: |
+          archive_name="$package_name-$package_version-${{ matrix.platform }}"
+          mkdir -p "$archive_name/"
+          cp rust-client/README.md rust-client/Acknowledgements.md "$archive_name/"
+          cp "target/${{ matrix.target }}/distribution/$package_name" "$archive_name/"
+          tar -czf "$archive_name.tar.gz" "$archive_name/"
+          echo "archive_filename=$archive_name.tar.gz" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.archive_filename }}
+          path: ${{ env.archive_filename }}
+
+      - name: upload release archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$package_version" || true
+          gh release upload --clobber "$package_version" "$archive_filename"
