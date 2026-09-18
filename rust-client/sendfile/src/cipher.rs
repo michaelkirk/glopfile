@@ -15,7 +15,7 @@ use std::io;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use aes_gcm::aead::generic_array::typenum::Unsigned;
+use aes_gcm::aead::array::typenum::Unsigned;
 use aes_gcm::Aes256Gcm;
 use bytes::Bytes;
 use derive_more::Deref;
@@ -33,7 +33,7 @@ pub struct CipherKey {
 pub use buffer::ContentCipherBuffer;
 pub(crate) use buffer::ContentCipherBufferPaddingType;
 
-pub const KEY_SIZE: usize = <Aes256Gcm as aes_gcm::NewAead>::KeySize::USIZE;
+pub const KEY_SIZE: usize = <Aes256Gcm as aes_gcm::KeySizeUser>::KeySize::USIZE;
 pub const NONCE_SIZE: usize = <Aes256Gcm as aes_gcm::AeadCore>::NonceSize::USIZE;
 pub const TAG_SIZE: usize = <Aes256Gcm as aes_gcm::AeadCore>::TagSize::USIZE;
 

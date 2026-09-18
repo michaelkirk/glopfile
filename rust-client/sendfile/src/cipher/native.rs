@@ -1,8 +1,7 @@
 use std::panic::resume_unwind;
 use std::sync::Arc;
 
-use aes_gcm::aead::NewAead;
-use aes_gcm::{AeadInPlace, Aes256Gcm};
+use aes_gcm::{AeadInOut, Aes256Gcm, KeyInit};
 use bytes::Bytes;
 use hkdf::Hkdf;
 use sha2::Sha256;
@@ -36,7 +35,7 @@ impl super::CipherImpl for NativeCipher {
             let payload = data.plaintext_mut();
 
             let new_tag = cipher
-                .encrypt_in_place_detached((&*nonce).into(), &aad, payload)
+                .encrypt_inout_detached((&*nonce).into(), &aad, payload.into())
                 .expect("encryption failure");
             *data.ciphertext_parts_mut().tag = new_tag.into();
             plaintext_and_nonce.into_nonce_and_ciphertext()
@@ -56,7 +55,7 @@ impl super::CipherImpl for NativeCipher {
             let ContentCipherBufferCiphertextPartsMut { payload, tag } =
                 data.ciphertext_parts_mut();
             cipher
-                .decrypt_in_place_detached((&*nonce).into(), &aad, payload, (&*tag).into())
+                .decrypt_inout_detached((&*nonce).into(), &aad, payload.into(), (&*tag).into())
                 .map_err(|_| Error::Decrypt)?;
             Ok(ciphertext_and_nonce.into_plaintext())
         })
