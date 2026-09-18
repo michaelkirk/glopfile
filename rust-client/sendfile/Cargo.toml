@@ -49,6 +49,8 @@ tokio-util = { workspace = true, features = ["compat"] }
 tungstenite.workspace = true
 
 [target."cfg(target_arch = \"wasm32\")".dependencies]
+# enable the js feature in getrandom (see https://docs.rs/getrandom/latest/getrandom/#webassembly-support).
+getrandom = { workspace = true, features = ["js"] }
 js-sys.workspace = true
 gloo-timers = { workspace = true, features = ["futures"] }
 sendfile-macros.workspace = true
@@ -89,10 +91,6 @@ web-sys = { workspace = true, features = [
 [dev-dependencies]
 pretty_env_logger.workspace = true
 tempfile.workspace = true
-
-[target."cfg(target_arch = \"wasm32\")".dev-dependencies]
-# enable the js feature in getrandom (see https://docs.rs/getrandom/latest/getrandom/#webassembly-support).
-getrandom = { workspace = true, features = ["js"] }
 
 [build-dependencies]
 prost-build.workspace = true
