@@ -17,7 +17,7 @@ aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
 axum = { version = "0.8.9", features = ["ws"] }
-backoff = "0.4.0"
+backon = "1.6.0"
 base64 = "0.23.1"
 bytes = "1.12.1"
 camino = "1.2.6"
@@ -29,8 +29,6 @@ datachannel = "0.16.1"
 derive_more = { version = "2.1.1", features = ["deref", "from"] }
 futures = "0.3.34"
 getrandom = "0.4"
-# backoff still pulls rand 0.8, whose getrandom needs its own wasm backend turned on.
-getrandom_0_2 = { package = "getrandom", version = "0.2" }
 gloo-timers = "0.4.0"
 hkdf = "0.13.0"
 http = "1.5.0"

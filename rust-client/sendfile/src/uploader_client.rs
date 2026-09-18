@@ -9,7 +9,6 @@ use std::io;
 use std::ops::ControlFlow::{self, Break, Continue};
 use std::sync::Arc;
 
-use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use crossbeam_utils::atomic::AtomicCell;
 use futures::channel::mpsc;
@@ -19,7 +18,6 @@ use prost::Message;
 use url::Url;
 
 use crate::api_client::{EncryptedFile, REQUEST_TIMEOUT};
-use crate::error::AsRetriableResultExt;
 use crate::p2p::protocol::{
     downloader_message, uploader_message, DataRequest, DataResponse, DownloaderHello,
     DownloaderMessage, TransferFinished, UploaderHello,
@@ -127,8 +125,7 @@ impl UploaderClient {
                 Transport::Relay | Transport::Both => {
                     let encrypted_file = encrypted_file.clone();
                     let relay_request_timeout_handle = relay_request_timeout_handle.clone();
-                    let backoff = ExponentialBackoff::default();
-                    let relay_task = retry(backoff, move || {
+                    let relay_task = retry(move || {
                         let encrypted_file = encrypted_file.clone();
                         let relay_request_timeout_handle = relay_request_timeout_handle.clone();
                         async move {
@@ -138,8 +135,8 @@ impl UploaderClient {
                                 .abortable_timeout(REQUEST_TIMEOUT);
                             relay_request_timeout_handle.put(relay_task.timeout_handle().clone());
                             let result: TimeoutResult<_> = relay_task.await;
-                            let result: Result<_> = result.as_retriable_result()?;
-                            let () = result.as_retriable_result()?;
+                            let result: Result<_> = result?;
+                            let () = result?;
                             Ok(())
                         }
                     });

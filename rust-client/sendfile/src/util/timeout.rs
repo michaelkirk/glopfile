@@ -1,6 +1,3 @@
-#[cfg(target_arch = "wasm32")]
-mod web;
-
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -10,11 +7,9 @@ use futures::{ready, Future, FutureExt};
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "wasm32")] {
-        use web::{send_sleep as send_sleep_impl, SendSleep as SendSleepImpl, sleep as sleep_impl, Sleep as SleepImpl};
+        use gloo_timers::future::{sleep as sleep_impl, TimeoutFuture as SleepImpl};
     } else {
-        use tokio::time::{
-            sleep as send_sleep_impl, sleep as sleep_impl, Sleep as SendSleepImpl, Sleep as SleepImpl,
-        };
+        use tokio::time::{sleep as sleep_impl, Sleep as SleepImpl};
     }
 }
 
@@ -23,13 +18,6 @@ pub(crate) struct Sleep(#[pin] SleepImpl);
 
 pub(crate) fn sleep(duration: Duration) -> Sleep {
     Sleep(sleep_impl(duration))
-}
-
-#[pin_project::pin_project]
-pub(crate) struct SendSleep(#[pin] SendSleepImpl);
-
-pub(crate) fn send_sleep(duration: Duration) -> SendSleep {
-    SendSleep(send_sleep_impl(duration))
 }
 
 pub(crate) trait TimeoutExt: Future + Sized {
@@ -112,17 +100,6 @@ impl<F: Future> Future for AbortableTimeoutFuture<F> {
 //
 
 impl Future for Sleep {
-    type Output = ();
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().0.poll(cx)
-    }
-}
-
-//
-// SendSleep impls
-//
-
-impl Future for SendSleep {
     type Output = ();
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.project().0.poll(cx)

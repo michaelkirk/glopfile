@@ -9,7 +9,6 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use std::{io, mem};
 
-use backoff::ExponentialBackoff;
 use base64::engine::{general_purpose::STANDARD, Engine};
 use bytes::Bytes;
 use futures::channel::mpsc;
@@ -20,7 +19,7 @@ use url::Url;
 use wasm_bindgen::prelude::*;
 
 use crate::cipher::{CipherKey, ContentCipher, ContentCipherBuffer, ContentCipherUsage};
-use crate::error::{AsRetriableResultExt, IntoResultExt, IntoRetriableResultExt};
+use crate::error::{IntoResultExt, RetryError};
 use crate::util::{retry, ProgressState, TimeoutExt, TimeoutResult};
 use crate::websocket::{WebSocketClient, WebSocketMessageHandler};
 use crate::{Error, Result};
@@ -73,14 +72,13 @@ impl ApiClient {
 
         let client = self.http_client();
 
-        let backoff = ExponentialBackoff::default();
-        let response = retry(backoff, || async {
+        let response = retry(|| async {
             let request = client.post(url.clone()).form(&form);
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.as_retriable_result()?;
-            let response: Response = result.as_retriable_result()?;
-            let response: Response = response.ok_or_retriable_err("failed to provision file")?;
-            Ok::<_, backoff::Error<Error>>(response)
+            let result: reqwest::Result<_> = result?;
+            let response: Response = result?;
+            let response: Response = response.ok_or("failed to provision file")?;
+            Ok::<_, RetryError>(response)
         })
         .await?;
 
@@ -124,8 +122,7 @@ impl ApiClient {
         // We don't actually have concurrency here, because retry() awaits each future we return from the
         // closure before returning a new one, but the compiler doesn't know that.
         let position_shared: AtomicUsize = Default::default();
-        let backoff = ExponentialBackoff::default();
-        retry(backoff, || async {
+        retry(|| async {
             loop {
                 let mut position = position_shared.load(Relaxed);
 
@@ -141,21 +138,19 @@ impl ApiClient {
                 let request = client.post(url.clone()).body(send_bytes).header(header::CONTENT_RANGE, content_range);
 
                 // First ask the server if we can start uploading content from this position.
-                let response = match start_request.send().await.as_retriable_result()? {
+                let response = match start_request.send().await? {
                     start_response if !start_response.status().is_success() => {
                         // Fall through and handle this "start upload" error response in the same
                         // way as we handle content upload errors.
                         start_response
                     }
                     start_response => {
-                        let response_bytes = start_response.bytes().await.as_retriable_result()?;
+                        let response_bytes = start_response.bytes().await?;
 
                         serde_json::from_slice::<UploadResponse>(&response_bytes).map_err(|error| {
                             error!("invalid server start upload response: {}", error);
-                            backoff::Error::permanent(Error::InvalidServerResponse(
-                                "Invalid start upload response",
-                            ))
-                        })?.ok_or_retriable_err("failed to start upload")?;
+                            Error::InvalidServerResponse("Invalid start upload response")
+                        })?.ok_or("failed to start upload")?;
 
                         // Upload the file content.
                         //
@@ -164,18 +159,16 @@ impl ApiClient {
                         // (or sending data just takes a long time). Upload request timeouts have to
                         // happen at a higher level, with help from feedback from the server via
                         // websocket.
-                        request.send().await.as_retriable_result()?
+                        request.send().await?
                     }
                 };
 
                 if let StatusCode::CONFLICT = response.status() {
-                    let response_bytes = response.bytes().await.as_retriable_result()?;
+                    let response_bytes = response.bytes().await?;
                     let conflict_response: UploadConflictResponse =
                         serde_json::from_slice(&response_bytes).map_err(|error| {
                             error!("invalid server 409 Conflict response: {}", error);
-                            backoff::Error::permanent(Error::InvalidServerResponse(
-                                "Invalid conflict error response",
-                            ))
+                            Error::InvalidServerResponse("Invalid conflict error response")
                         })?;
                     let old_position = position;
                     position = usize::try_from(conflict_response.position).expect("file fits in memory");
@@ -185,16 +178,14 @@ impl ApiClient {
                             "Downloader requested file position {position} \
                              which is greater than file size {file_size}.",
                         );
-                        return Err(backoff::Error::permanent(Error::InvalidPeerMessage {
-                            source: error_message.into(),
-                        }));
+                        return Err(Error::InvalidPeerMessage { source: error_message.into() }.into());
                     } else if position == old_position {
                         // Return an error when the server returns a 409 for same offset that we started with.
                         // This isn't really an error, but we want to back off to be nice in case the server
                         // is malfunctioning.
                         warn!("server returned spurious 409 Conflict response with identical offset; \
                                backing off.");
-                        break Err(backoff::Error::transient(Error::ClientHttpErrorResponse {
+                        break Err(RetryError::transient(Error::ClientHttpErrorResponse {
                             message: "Spurious 409 Conflict response from server; identical offset.",
                             status: StatusCode::CONFLICT.as_u16(),
                             retry_after: None,
@@ -204,15 +195,13 @@ impl ApiClient {
                     }
                 } else {
                     let response = response
-                        .ok_or_retriable_err("failed to upload content")?;
-                    let response_bytes = response.bytes().await.as_retriable_result()?;
+                        .ok_or("failed to upload content")?;
+                    let response_bytes = response.bytes().await?;
 
                     serde_json::from_slice::<UploadResponse>(&response_bytes).map_err(|error| {
                             error!("invalid server upload response: {}", error);
-                            backoff::Error::permanent(Error::InvalidServerResponse(
-                                "Invalid upload response",
-                            ))
-                    })?.ok_or_retriable_err("failed to upload")?;
+                            Error::InvalidServerResponse("Invalid upload response")
+                    })?.ok_or("failed to upload")?;
                     break Ok(());
                 }
             }
@@ -226,15 +215,13 @@ impl ApiClient {
 
         let client = self.http_client();
 
-        let backoff = ExponentialBackoff::default();
-        let response = retry(backoff, || async {
+        let response = retry(|| async {
             let request = client.get(url.clone());
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.as_retriable_result()?;
-            let response: Response = result.as_retriable_result()?;
-            let response: Response =
-                response.ok_or_retriable_err("failed to fetch download details")?;
-            Ok::<_, backoff::Error<Error>>(response)
+            let result: reqwest::Result<_> = result?;
+            let response: Response = result?;
+            let response: Response = response.ok_or("failed to fetch download details")?;
+            Ok::<_, RetryError>(response)
         })
         .await?;
 
@@ -294,16 +281,15 @@ impl ApiClient {
 
         let client = self.http_client();
 
-        let backoff = ExponentialBackoff::default();
-        retry(backoff, || async {
+        retry(|| async {
             let content_offset = decrypted_file.offset();
             let request = client
                 .get(content_url.clone())
                 .header(header::RANGE, format!("bytes={content_offset}-"));
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.as_retriable_result()?;
-            let response: Response = result.as_retriable_result()?;
-            let response: Response = response.ok_or_retriable_err("failed to download content")?;
+            let result: reqwest::Result<_> = result?;
+            let response: Response = result?;
+            let response: Response = response.ok_or("failed to download content")?;
 
             debug!("waiting on response body");
             let mut response_bytes_stream = response.bytes_stream();
@@ -312,10 +298,8 @@ impl ApiClient {
             while let Some(data) = response_bytes_stream
                 .next()
                 .timeout(CONTENT_TIMEOUT)
-                .await
-                .as_retriable_result()?
-                .transpose()
-                .as_retriable_result()?
+                .await?
+                .transpose()?
             {
                 content_downloaded += u64::try_from(data.len()).expect("128-bit machine?");
                 let _ignore = progress_tx.unbounded_send(ProgressState {
@@ -325,18 +309,18 @@ impl ApiClient {
                 let () = decrypted_file
                     .write_all(&data)
                     .await
-                    .map_err(|error| backoff::Error::permanent(error.into()))?;
+                    .map_err(RetryError::permanent)?;
             }
             let () = decrypted_file
                 .flush()
                 .await
-                .map_err(|error| backoff::Error::permanent(error.into()))?;
+                .map_err(RetryError::permanent)?;
             let () = decrypted_file
                 .close()
                 .await
-                .map_err(|error| backoff::Error::permanent(error.into()))?;
+                .map_err(RetryError::permanent)?;
 
-            Ok::<_, backoff::Error<Error>>(())
+            Ok::<_, RetryError>(())
         })
         .await
     }
@@ -353,19 +337,18 @@ impl ApiClient {
 
         let client = self.http_client();
 
-        let backoff = ExponentialBackoff::default();
-        retry(backoff, || async {
+        retry(|| async {
             let request = client
                 .get(content_url.clone())
                 .header(header::RANGE, format!("bytes=-0"));
             let result: TimeoutResult<_> = request.send().timeout(REQUEST_TIMEOUT).await;
-            let result: reqwest::Result<_> = result.as_retriable_result()?;
-            let response: Response = result.as_retriable_result()?;
+            let result: reqwest::Result<_> = result?;
+            let response: Response = result?;
             if let StatusCode::NOT_FOUND = response.status() {
                 // The session was already terminated; treat this as a success.
-                Ok::<_, backoff::Error<Error>>(())
+                Ok::<_, RetryError>(())
             } else {
-                response.ok_or_retriable_err("failed to finish download")?;
+                response.ok_or("failed to finish download")?;
                 Ok(())
             }
         })
