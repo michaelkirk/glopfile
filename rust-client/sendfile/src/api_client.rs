@@ -13,6 +13,7 @@ use backoff::ExponentialBackoff;
 use bytes::Bytes;
 use futures::channel::mpsc;
 use futures::{ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, StreamExt};
+use base64::engine::{general_purpose::STANDARD, Engine};
 use reqwest::{header, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -62,7 +63,7 @@ impl ApiClient {
             .encrypt(buffer, ContentCipherUsage::Metadata)
             .await;
 
-        let encoded_metadata = base64::encode(encrypted_metadata);
+        let encoded_metadata = STANDARD.encode(encrypted_metadata);
         debug!(
             "posting to url: {}, encrypted_metadata: {:?}",
             url, &encoded_metadata
@@ -244,7 +245,8 @@ impl ApiClient {
         }
         let download_response = response.json::<EncodedDownloadMeta>().await?;
         debug!("download_response: {:?}", download_response);
-        let decoded_metadata: Vec<u8> = base64::decode(&download_response.meta)
+        let decoded_metadata: Vec<u8> = STANDARD
+            .decode(&download_response.meta)
             .map_err(|_| Error::InvalidInput("invalid base64 encoding of metadata"))?;
         let decrypted_metadata = self
             .cipher()

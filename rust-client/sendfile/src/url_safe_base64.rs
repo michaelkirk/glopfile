@@ -1,5 +1,7 @@
+use base64::engine::{general_purpose::STANDARD, Engine};
+
 pub fn encode(bytes: &[u8]) -> String {
-    let conventional_base64 = base64::encode(bytes);
+    let conventional_base64 = STANDARD.encode(bytes);
     conventional_base64
         .chars()
         .into_iter()
@@ -24,5 +26,5 @@ pub fn decode(url_safe_base64: &str) -> Result<Vec<u8>, base64::DecodeError> {
         })
         .collect::<String>();
 
-    base64::decode(conventional_base64)
+    STANDARD.decode(conventional_base64)
 }

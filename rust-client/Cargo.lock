@@ -145,6 +145,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "bindgen"
 version = "0.71.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1676,7 +1682,7 @@ name = "reqwest"
 version = "0.11.10"
 source = "git+https://github.com/privacyresearchgroup/reqwest.git?branch=wasm-streaming#a2c384b0e4453381e3456d4e5c5809b8a952d878"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "bytes",
  "encoding_rs",
  "futures-core",
@@ -1819,7 +1825,7 @@ dependencies = [
  "aes-gcm",
  "async-trait",
  "backoff",
- "base64",
+ "base64 0.23.1",
  "bytes",
  "cfg-if",
  "crossbeam-utils",
@@ -2299,7 +2305,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ad3713a14ae247f22a728a0456a545df14acf3867f905adff84be99e23b3ad1"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "byteorder",
  "bytes",
  "http",
