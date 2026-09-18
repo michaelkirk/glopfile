@@ -1,0 +1,11 @@
+# The relay, built from this checkout.
+services:
+  relay:
+    build:
+      context: ../../api-server
+    ports:
+      - "127.0.0.1:${SENDFILE_PORT:-8080}:8080"
+    environment:
+      SENDFILE_LISTEN: 0.0.0.0:8080
+      RUST_LOG: ${RUST_LOG:-sendfile=debug,info}
+    restart: unless-stopped
