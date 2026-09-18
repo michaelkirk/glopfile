@@ -216,8 +216,8 @@ impl TryFrom<&websocket::SessionDescription> for SessionDescription {
     type Error = ConvertSessionDescriptionError;
     fn try_from(from: &websocket::SessionDescription) -> Result<Self, Self::Error> {
         let sdp = webrtc_sdp::parse_sdp(&from.sdp, false)?;
-        let sdp_type = websocket::SessionDescriptionType::from_i32(from.sdp_type)
-            .ok_or(Self::Error::InvalidType(from.sdp_type))?;
+        let sdp_type = websocket::SessionDescriptionType::try_from(from.sdp_type)
+            .map_err(|_| Self::Error::InvalidType(from.sdp_type))?;
         Ok(SessionDescription { sdp, sdp_type: (&sdp_type).into() })
     }
 }
