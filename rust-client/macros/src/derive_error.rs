@@ -1,7 +1,6 @@
 use std::fmt::Write;
 
-use proc_macro_error::abort_call_site;
-use syn::{Field, Ident, Lit, Meta, MetaNameValue};
+use syn::{Error, Expr, ExprLit, Field, Ident, Lit, Meta, MetaNameValue, Result};
 
 pub struct TypescriptErrorField {
     pub name: String,
@@ -9,17 +8,28 @@ pub struct TypescriptErrorField {
 }
 
 impl TypescriptErrorField {
-    pub fn new(field: &Field) -> Option<Self> {
-        let typescript_type_attr = field
+    pub fn new(field: &Field) -> Result<Option<Self>> {
+        let Some(attr) = field
             .attrs
             .iter()
-            .find(|attr| attr.path.is_ident("typescript_type"))?;
-        let ty = match typescript_type_attr.parse_meta().unwrap() {
-            Meta::NameValue(MetaNameValue { lit: Lit::Str(lit_str), .. }) => lit_str.value(),
-            _ => abort_call_site!("Usage: #[typescript_type = \"...\"]"),
+            .find(|attr| attr.path().is_ident("typescript_type"))
+        else {
+            return Ok(None);
+        };
+        let ty = match &attr.meta {
+            Meta::NameValue(MetaNameValue {
+                value: Expr::Lit(ExprLit { lit: Lit::Str(lit_str), .. }),
+                ..
+            }) => lit_str.value(),
+            meta => {
+                return Err(Error::new_spanned(
+                    meta,
+                    "usage: #[typescript_type = \"...\"]",
+                ))
+            }
         };
         let name = field.ident.as_ref().unwrap().to_string();
-        Some(Self { name, ty })
+        Ok(Some(Self { name, ty }))
     }
 }
 
