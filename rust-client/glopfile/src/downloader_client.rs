@@ -38,6 +38,12 @@ struct PeerToPeerConnectHandler<'a, 'b> {
     state: &'a mut DownloadState<'b>,
 }
 
+/// Whether a failed p2p transfer may finish over the relay.
+enum RelayFallback {
+    Allowed,
+    Forbidden,
+}
+
 const CHUNK_SIZE: u64 = 16 * 1024;
 const MAX_P2P_INFLIGHT_DATA_LEN: u64 = 10 * 1024 * 1024;
 
@@ -84,8 +90,14 @@ impl DownloaderClient {
                 total_len: meta.file_meta.file_size + ContentCipher::extra_ciphertext_len(),
             };
             match self.transport {
-                Transport::Both => self.download_p2p(meta, &mut state, p2p_timeout).await,
-                Transport::P2P => self.download_p2p(meta, &mut state, None).await,
+                Transport::Both => {
+                    self.download_p2p(meta, &mut state, p2p_timeout, RelayFallback::Allowed)
+                        .await
+                }
+                Transport::P2P => {
+                    self.download_p2p(meta, &mut state, None, RelayFallback::Forbidden)
+                        .await
+                }
                 Transport::Relay => {
                     self.download_relayed(meta, state.decrypted_file, state.progress_tx)
                         .await
@@ -99,6 +111,7 @@ impl DownloaderClient {
         meta: &DownloadMeta,
         state: &mut DownloadState<'_>,
         p2p_timeout: Option<Duration>,
+        relay_fallback: RelayFallback,
     ) -> Result<()> {
         let mut p2p_client = PeerToPeerClient::new(
             self.api_client.cipher_key(),
@@ -127,22 +140,17 @@ impl DownloaderClient {
 
         match p2p_result {
             Ok(()) => return Ok(()),
-            Err(error) => match self.transport {
-                // If user requested fallback to relayed transfer, continue below.
-                Transport::Both => match error {
+            Err(error) => match relay_fallback {
+                RelayFallback::Allowed => match error {
                     Error::Timeout => {
                         info!("p2p transfer timed out; falling back to relayed transfer")
                     }
                     _ => warn!("p2p transfer error; falling back to relayed transfer: {error}"),
                 },
-
-                // If user requested p2p-only, return the error
-                Transport::P2P => {
+                RelayFallback::Forbidden => {
                     warn!("p2p transfer error: {error}");
                     return Err(error);
                 }
-
-                Transport::Relay => unreachable!(),
             },
         }
 
@@ -180,12 +188,25 @@ impl DownloaderClient {
                 }
             }
 
-            // Continue transfer over p2p until we hit another error or timeout.
+            // Continue transfer over p2p as long as it keeps making progress. Retrying a p2p
+            // transfer that delivered nothing would only cancel the relayed transfer again, so
+            // leave the relayed transfer to finish, or to time out on its own.
+            let offset_before_p2p = state.decrypted_file.offset();
             match self
                 .transfer_p2p(&mut p2p_client, meta, state, p2p_timeout)
                 .await
             {
                 Ok(()) => break Ok(()),
+                Err(error) if state.decrypted_file.offset() == offset_before_p2p => {
+                    warn!("p2p transfer made no progress; finishing relayed transfer: {error}");
+                    break self
+                        .download_relayed(
+                            meta,
+                            state.decrypted_file.clone(),
+                            state.progress_tx.clone(),
+                        )
+                        .await;
+                }
                 Err(Error::Timeout) => info!("p2p transfer timed out; falling back to relayed"),
                 Err(error) => warn!("p2p error; falling back to relayed: {error}"),
             }
