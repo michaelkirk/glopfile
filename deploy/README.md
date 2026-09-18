@@ -4,6 +4,15 @@ The relay runs as a single Docker container bound to a **loopback port**. The
 reverse proxy that terminates TLS and faces the internet lives outside this
 repo; nothing here publishes on a public interface.
 
+## hemlock
+
+hemlock is deployed by ansible, not by the script below: the `sendfile` role in
+`hemlock-ansible` owns the compose file, the unit and the caddy vhost, and
+serves the relay at `api.s.endoftheworl.de`. The web client is the static site
+at `s.endoftheworl.de`. Re-running that playbook deploys a new image.
+
+What follows is the generic path, for a host ansible does not manage.
+
 ## Install or update a host
 
 On the host, as root:
