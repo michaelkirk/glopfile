@@ -16,7 +16,7 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: log in to ghcr
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -24,18 +24,18 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Builds on every push so a broken Dockerfile is caught in review;
-      # only master is published.
+      # only main is published.
       - uses: docker/build-push-action@v6
         with:
           context: api-server
-          load: ${{ github.ref != 'refs/heads/master' }}
-          push: ${{ github.ref == 'refs/heads/master' }}
+          load: ${{ github.ref != 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ github.repository_owner }}/sendfile:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: the image serves the api
-        if: github.ref != 'refs/heads/master'
+        if: github.ref != 'refs/heads/main'
         run: |
           docker run -d --name relay -p 127.0.0.1:8080:8080 \
             ghcr.io/${{ github.repository_owner }}/sendfile:latest

@@ -5,7 +5,7 @@
 # relay is configured entirely through the environment.
 services:
   relay:
-    image: ${SENDFILE_IMAGE:-ghcr.io/privacyresearchgroup/sendfile:latest}
+    image: ${SENDFILE_IMAGE:-ghcr.io/michaelkirk/sendfile:latest}
     # Loopback only. Nothing reaches the relay except the reverse proxy on this
     # host; publishing on 0.0.0.0 would expose it directly.
     ports:

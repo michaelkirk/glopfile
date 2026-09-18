@@ -9,10 +9,10 @@ crate_type = ["staticlib"]
 
 [dependencies]
 log = "0.4.14"
-sendfile = { git = "ssh://git@github.com/privacyresearchgroup/sendfile-cli.git", branch = "master", features = ["ffi"] }
+sendfile = { path = "../../rust-client/sendfile", features = ["ffi"] }
 uniffi = "0.18.0"
 
 [build-dependencies]
-sendfile-ffi-bindings = { git = "ssh://git@github.com/privacyresearchgroup/sendfile-cli.git", branch = "master" }
+sendfile-ffi-bindings = { path = "../../rust-client/sendfile-ffi-bindings" }
 uniffi_build = { version = "0.18.0", features = ["builtin-bindgen"] }
 uniffi_bindgen = "0.18.0"

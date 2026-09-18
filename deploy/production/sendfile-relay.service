@@ -1,6 +1,6 @@
 [Unit]
 Description=Sendfile relay
-Documentation=https://github.com/glopfile/sendfile
+Documentation=https://github.com/michaelkirk/sendfile
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
