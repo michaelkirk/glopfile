@@ -8,12 +8,13 @@ use std::mem;
 use std::ops::ControlFlow;
 use std::ops::ControlFlow::{Break, Continue};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use bytes::Bytes;
 use futures::channel::mpsc;
 use futures::StreamExt;
-use instant::{Duration, Instant};
 use prost::Message;
+use web_time::Instant;
 
 use crate::cipher::{
     CipherKey, ContentCipher, ContentCipherBuffer, ContentCipherBufferPaddingType,

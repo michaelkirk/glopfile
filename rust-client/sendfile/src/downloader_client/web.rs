@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::task::{Context, Poll};
 
 use futures::{pin_mut, ready, AsyncWrite, Future, FutureExt, TryStreamExt};
-use instant::Duration;
+use std::time::Duration;
 use js_sys::{JsString, Uint8Array};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;

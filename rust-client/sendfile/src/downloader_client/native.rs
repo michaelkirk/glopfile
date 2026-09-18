@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures::{pin_mut, AsyncWrite, TryStreamExt};
-use instant::Duration;
+use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::BufWriter;
 use tokio_util::compat::TokioAsyncWriteCompatExt;
