@@ -1,6 +1,6 @@
 use datachannel::{
-    ConnectionState, DataChannelHandler, DataChannelInit, GatheringState, IceCandidate,
-    PeerConnectionHandler, RtcConfig, RtcDataChannel, RtcPeerConnection, SdpType,
+    ConnectionState, DataChannelHandler, DataChannelInfo, DataChannelInit, GatheringState,
+    IceCandidate, PeerConnectionHandler, RtcConfig, RtcDataChannel, RtcPeerConnection, SdpType,
     SessionDescription, SignalingState,
 };
 use webrtc_sdp::error::SdpParserError;
@@ -109,7 +109,7 @@ impl super::RtcPeerConnection for NativePeerConnection {
         &mut self,
         candidate: websocket::IceCandidate,
     ) -> Result<(), Error> {
-        let candidate = candidate.try_into().map_err(Error::rtc_err)?;
+        let candidate = IceCandidate::from(candidate);
         self.rtc
             .add_remote_candidate(&candidate)
             .map_err(Error::rtc_err)?;
@@ -130,7 +130,7 @@ impl DataChannelHandler for NoopDataChannelHandler {}
 impl PeerConnectionHandler for NativePeerConnectionHandler {
     type DCH = NoopDataChannelHandler;
 
-    fn data_channel_handler(&mut self) -> Self::DCH {
+    fn data_channel_handler(&mut self, _info: DataChannelInfo) -> Self::DCH {
         NoopDataChannelHandler
     }
 
@@ -216,8 +216,8 @@ impl TryFrom<&websocket::SessionDescription> for SessionDescription {
     type Error = ConvertSessionDescriptionError;
     fn try_from(from: &websocket::SessionDescription) -> Result<Self, Self::Error> {
         let sdp = webrtc_sdp::parse_sdp(&from.sdp, false)?;
-        let sdp_type = websocket::SessionDescriptionType::from_i32(from.sdp_type)
-            .ok_or(Self::Error::InvalidType(from.sdp_type))?;
+        let sdp_type = websocket::SessionDescriptionType::try_from(from.sdp_type)
+            .map_err(|_| Self::Error::InvalidType(from.sdp_type))?;
         Ok(SessionDescription { sdp, sdp_type: (&sdp_type).into() })
     }
 }

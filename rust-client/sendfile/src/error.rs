@@ -180,7 +180,7 @@ where
                     }
                 }
             }
-            Error::HTTPClient { .. } | Error::IO { .. } | Error::Timeout { .. } => {
+            Error::HTTPClient { .. } | Error::IO { .. } | Error::Timeout => {
                 backoff::Error::transient(error)
             }
             _ => backoff::Error::permanent(error),

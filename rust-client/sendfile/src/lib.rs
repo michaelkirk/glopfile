@@ -1,5 +1,5 @@
 #![allow(
-    clippy::drop_copy,
+    dropping_copy_types,
     clippy::unused_unit,
     clippy::comparison_chain,
     clippy::let_and_return,
@@ -37,14 +37,18 @@ cfg_if::cfg_if! {
     }
 }
 
+// The UDL scaffolding has to live at the crate root, since it refers to `crate::UniFfiTag`.
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+use crate::Error as SendfileError;
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+uniffi::include_scaffolding!("lib");
+
 #[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
 pub mod ffi {
-    use crate::{
+    pub use crate::{
         DownloadMeta, DownloaderClient, Error as SendfileError, FileMeta, NativeProvisionedFile,
-        Transport, UploaderClient,
+        Transport, UniFfiTag, UploaderClient,
     };
-
-    include!(concat!(env!("OUT_DIR"), "/lib.uniffi.rs"));
 }
 
 use api_client::ApiClient;
@@ -96,7 +100,7 @@ mod tests {
                 self.downloader_transport,
             )
             .unwrap();
-            let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
+            let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().keep();
             debug!("downloader will download");
             let meta = downloader.fetch_meta().unwrap();
             downloader

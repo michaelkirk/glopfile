@@ -1,5 +1,5 @@
 #![allow(
-    clippy::drop_copy,
+    dropping_copy_types,
     clippy::unused_unit,
     clippy::comparison_chain,
     clippy::let_and_return,
@@ -23,6 +23,7 @@ use url::Url;
 
 #[derive(Parser)]
 #[clap(name = "sendfile")]
+#[clap(bin_name = "sendfile")]
 #[clap(about = "send a file!", long_about = None)]
 struct Args {
     #[clap(subcommand)]

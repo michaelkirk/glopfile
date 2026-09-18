@@ -3,7 +3,6 @@ use std::panic::resume_unwind;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
-use bytes::Bytes;
 use futures::future::{abortable, pending, Abortable, Aborted, Pending};
 use futures::never::Never;
 use futures::{SinkExt, StreamExt};
@@ -70,7 +69,7 @@ impl crate::websocket::WebSocketConnectionImpl for NativeWebSocketConnection {
                                 warn!("received unexpected websocket text message: {text}");
                             }
                             Some(Ok(tungstenite::Message::Binary(data))) => {
-                                let message = WebSocketMessage::decode(Bytes::from(data))?;
+                                let message = WebSocketMessage::decode(data)?;
                                 if let ControlFlow::Break(()) = incoming_message_handler.handle(message) {
                                     break;
                                 }
@@ -79,6 +78,9 @@ impl crate::websocket::WebSocketConnectionImpl for NativeWebSocketConnection {
                                 connection.get_mut().send(tungstenite::Message::Pong(payload)).await?;
                             }
                             Some(Ok(tungstenite::Message::Pong(_))) => (),
+                            Some(Ok(tungstenite::Message::Frame(_))) => {
+                                warn!("received unexpected raw websocket frame");
+                            }
                             Some(Ok(tungstenite::Message::Close(None))) => break,
                             Some(Ok(tungstenite::Message::Close(Some(CloseFrame { code, reason })))) => {
                                 let status = u16::from(code).into();
@@ -105,7 +107,7 @@ impl crate::websocket::WebSocketConnectionImpl for NativeWebSocketConnection {
         let encoded = message.encode_to_vec();
         let (reply_tx, reply_rx) = oneshot::channel();
         self.outgoing_message_tx
-            .send((tungstenite::Message::Binary(encoded), reply_tx))
+            .send((tungstenite::Message::Binary(encoded.into()), reply_tx))
             .map_err(|_| self.join_sync().unwrap_err())?;
         reply_rx.await.map_err(|_| self.join_sync().unwrap_err())?;
         Ok(())

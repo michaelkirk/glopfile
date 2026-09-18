@@ -159,6 +159,8 @@ pub enum WebSocketKnownCloseStatus {
 }
 
 impl WebSocketClient {
+    // The whole client is single-threaded, so the shared connection needn't be Send or Sync.
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn new(url: String, handler: impl WebSocketMessageHandler) -> Self {
         let (mut connection_tx, connection_rx) = oneshot::channel();
         let connection = Arc::new(Mutex::new(connection_rx.shared()));

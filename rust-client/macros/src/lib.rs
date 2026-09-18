@@ -3,28 +3,35 @@ mod derive_error;
 use derive_error::{typescript_error_declaration, typescript_error_definition};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use proc_macro_error::abort_call_site;
 use quote::quote;
-use syn::{parse_macro_input, Field, Fields, ItemStruct, LitStr};
+use syn::{parse_macro_input, Error, Field, Fields, ItemStruct, LitStr, Result};
 
 use crate::derive_error::TypescriptErrorField;
 
 #[proc_macro_attribute]
 pub fn typescript_error(_meta: TokenStream, input: TokenStream) -> TokenStream {
-    let ItemStruct { attrs, vis, ident, generics: _, fields, .. } =
-        parse_macro_input!(input as ItemStruct);
+    let item = parse_macro_input!(input as ItemStruct);
+    match expand_typescript_error(item) {
+        Ok(output) => output.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+fn expand_typescript_error(item: ItemStruct) -> Result<proc_macro2::TokenStream> {
+    let ItemStruct { attrs, vis, ident, generics: _, fields, .. } = item;
 
     let typescript_fields = match &fields {
         Fields::Named(fields) => fields
             .named
             .iter()
-            .flat_map(TypescriptErrorField::new)
-            .collect(),
+            .filter_map(|field| TypescriptErrorField::new(field).transpose())
+            .collect::<Result<Vec<_>>>()?,
         Fields::Unit => vec![],
         Fields::Unnamed { .. } => {
-            abort_call_site!(
-                "#[derive(TypescriptError)] can only be used for structs with named fields"
-            )
+            return Err(Error::new_spanned(
+                &fields,
+                "#[typescript_error] can only be used for structs with named fields",
+            ))
         }
     };
 
@@ -40,7 +47,7 @@ pub fn typescript_error(_meta: TokenStream, input: TokenStream) -> TokenStream {
         }
     });
 
-    let output = quote! {
+    Ok(quote! {
         #[wasm_bindgen::prelude::wasm_bindgen(typescript_custom_section)]
         const _: &'static str = #typescript_literal;
 
@@ -52,6 +59,5 @@ pub fn typescript_error(_meta: TokenStream, input: TokenStream) -> TokenStream {
             #[wasm_bindgen(constructor)]
             pub fn new(message: &str, #(#rust_constructor_params),*) -> #ident;
         }
-    };
-    output.into()
+    })
 }

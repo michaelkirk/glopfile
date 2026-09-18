@@ -9,5 +9,6 @@ cfg_if::cfg_if! {
 }
 
 pub fn spawn_local(future: impl Future<Output = ()> + 'static) {
-    let _ = spawn_impl(future);
+    // the spawned task is detached on purpose
+    let _detached = spawn_impl(future);
 }

@@ -42,6 +42,7 @@ pub trait UploadableFile {
     async fn len(&self) -> io::Result<u64>;
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait::async_trait(?Send)]
 pub trait TryClone: Sized {
     async fn try_clone(&self) -> Result<Self>;
@@ -276,6 +277,7 @@ impl<F> ProvisionedFile<F> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[async_trait::async_trait(?Send)]
 impl<F: TryClone> TryClone for ProvisionedFile<F> {
     async fn try_clone(&self) -> Result<Self> {
