@@ -96,7 +96,7 @@ mod tests {
                 self.downloader_transport,
             )
             .unwrap();
-            let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().into_path();
+            let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().keep();
             debug!("downloader will download");
             let meta = downloader.fetch_meta().unwrap();
             downloader

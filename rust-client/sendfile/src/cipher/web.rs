@@ -93,8 +93,8 @@ impl super::CipherImpl for WebCipher {
         let nonce = Uint8Array::from(&nonce[..]);
         let aad = Uint8Array::from(&aad[..]);
 
-        let mut params = AesGcmParams::new("AES-GCM", &nonce);
-        params.additional_data(&aad);
+        let params = AesGcmParams::new("AES-GCM", &nonce);
+        params.set_additional_data(&aad);
         let encryption_promise = self
             .subtle
             .encrypt_with_object_and_u8_array(&params, &self.key, plaintext)
@@ -119,8 +119,8 @@ impl super::CipherImpl for WebCipher {
         let nonce = Uint8Array::from(&nonce[..]);
         let aad = Uint8Array::from(&aad[..]);
 
-        let mut params = AesGcmParams::new("AES-GCM", &nonce);
-        params.additional_data(&aad);
+        let params = AesGcmParams::new("AES-GCM", &nonce);
+        params.set_additional_data(&aad);
         let encryption_promise = self
             .subtle
             .decrypt_with_object_and_u8_array(&params, &self.key, ciphertext)

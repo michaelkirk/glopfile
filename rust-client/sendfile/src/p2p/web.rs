@@ -65,13 +65,13 @@ impl super::Rtc for WebRtc {
         let mut callbacks = Callbacks::default();
 
         let stun_servers = stun_servers.iter().map(|url| {
-            let mut stun_server = RtcIceServer::new();
-            stun_server.urls(&JsString::from(*url));
+            let stun_server = RtcIceServer::new();
+            stun_server.set_urls(&JsString::from(*url));
             stun_server
         });
 
-        let mut rtc_config = RtcConfiguration::new();
-        rtc_config.ice_servers(&stun_servers.collect::<Array>());
+        let rtc_config = RtcConfiguration::new();
+        rtc_config.set_ice_servers(&stun_servers.collect::<Array>());
 
         let rtc =
             RtcPeerConnection::new_with_configuration(&rtc_config).map_err(WebRtcError::from)?;
@@ -155,9 +155,9 @@ impl super::RtcPeerConnection for WebRtcPeerConnection {
     ) -> Result<Self::DataChannel, Error> {
         let mut callbacks = Callbacks::default();
 
-        let mut init = RtcDataChannelInit::new();
-        init.negotiated(true);
-        init.id(id);
+        let init = RtcDataChannelInit::new();
+        init.set_negotiated(true);
+        init.set_id(id);
 
         let rtc = self
             .rtc
@@ -293,8 +293,8 @@ impl From<&RtcIceCandidate> for websocket::IceCandidate {
 
 impl From<&websocket::IceCandidate> for RtcIceCandidate {
     fn from(from: &websocket::IceCandidate) -> Self {
-        let mut init = RtcIceCandidateInit::new(&from.candidate);
-        init.sdp_mid(Some(&from.mid));
+        let init = RtcIceCandidateInit::new(&from.candidate);
+        init.set_sdp_mid(Some(&from.mid));
         Self::new(&init).expect("RtcIceCandidate constructor used correctly")
     }
 }
@@ -310,8 +310,8 @@ impl From<&RtcSessionDescription> for websocket::SessionDescription {
 
 impl From<&websocket::SessionDescription> for RtcSessionDescriptionInit {
     fn from(from: &websocket::SessionDescription) -> Self {
-        let mut init = Self::new((&from.sdp_type()).into());
-        init.sdp(&from.sdp);
+        let init = Self::new((&from.sdp_type()).into());
+        init.set_sdp(&from.sdp);
         init
     }
 }
