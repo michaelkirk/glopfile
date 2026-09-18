@@ -1,0 +1,21 @@
+[Unit]
+Description=Sendfile relay
+Documentation=https://github.com/glopfile/sendfile
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+# Compose runs in the foreground so systemd supervises the container directly
+# and `journalctl -u sendfile-relay` shows the relay's own output.
+WorkingDirectory=/opt/sendfile
+EnvironmentFile=-/etc/sendfile/relay.env
+ExecStartPre=/usr/bin/docker compose pull --quiet
+ExecStart=/usr/bin/docker compose up --abort-on-container-exit
+ExecStop=/usr/bin/docker compose down
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

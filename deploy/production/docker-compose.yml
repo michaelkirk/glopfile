@@ -1,0 +1,19 @@
+# The relay, bound to a private port for an nginx that lives outside this repo.
+#
+# The image is the one built from api-server/Dockerfile by
+# .github/workflows/api-server.yml. There is no deployment-specific image: the
+# relay is configured entirely through the environment.
+services:
+  relay:
+    image: ${SENDFILE_IMAGE:-ghcr.io/privacyresearchgroup/sendfile:latest}
+    # Loopback only. Nothing reaches the relay except the reverse proxy on this
+    # host; publishing on 0.0.0.0 would expose it directly.
+    ports:
+      - "127.0.0.1:${SENDFILE_PORT:-8080}:8080"
+    environment:
+      SENDFILE_LISTEN: 0.0.0.0:8080
+      RUST_LOG: ${RUST_LOG:-info}
+    restart: unless-stopped
+    # Print to stdout and let the host's journal keep it.
+    logging:
+      driver: journald

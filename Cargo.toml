@@ -6,10 +6,10 @@ members = [
     "rust-client/sendfile",
     "rust-client/sendfile-ffi-bindings",
 ]
-# ios and www-client build wasm bundles of their own, against their own pinned
+# ios-client and www-client build bundles of their own, against their own pinned
 # toolchains. .worktrees holds git worktrees of this repo, whose packages belong
 # to their own checkout's workspace, not this one.
-exclude = [".worktrees", "ios", "www-client"]
+exclude = [".worktrees", "ios-client", "www-client"]
 resolver = "2"
 
 [workspace.dependencies]

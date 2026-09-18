@@ -1,0 +1,49 @@
+name: rust
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy -p sendfile --target wasm32-unknown-unknown --no-default-features -- -D warnings
+      - run: cargo clippy -p sendfile --features ffi --all-targets -- -D warnings
+
+      # The client's round-trip tests talk to a relay on :8080, the default
+      # baked in when TEST_SENDFILE_API_ENDPOINT is unset. Now that both live
+      # in this repo we can give them a real one rather than let them fail.
+      - name: start the relay
+        run: |
+          cargo build -p sendfile-relay --bin sendfile
+          SENDFILE_LISTEN=127.0.0.1:8080 ./target/debug/sendfile &
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8080/api/v1/health_check >/dev/null && exit 0
+            sleep 1
+          done
+          echo "relay did not come up" >&2
+          exit 1
+
+      - run: cargo test --workspace
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
