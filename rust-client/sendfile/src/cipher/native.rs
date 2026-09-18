@@ -21,7 +21,7 @@ impl super::CipherImpl for NativeCipher {
     async fn derive_new(base_key: &CipherKey, hkdf_info: &[u8]) -> Self {
         let mut aes_key = [0; KEY_SIZE];
         let hkdf = Hkdf::<Sha256>::new(None, base_key.bytes());
-        hkdf.expand(&hkdf_info, &mut aes_key)
+        hkdf.expand(hkdf_info, &mut aes_key)
             .expect("failed to derive key");
 
         Self { cipher: Arc::new(Aes256Gcm::new(&aes_key.into())) }

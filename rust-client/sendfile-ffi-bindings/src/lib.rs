@@ -17,7 +17,9 @@ pub fn write_bindings(
         languages: vec![language],
         source: SENDFILE_UDL.into(),
         out_dir: path_arg(out_dir.as_ref())?,
-        config_override: config_path.map(|path| path_arg(path.as_ref())).transpose()?,
+        config_override: config_path
+            .map(|path| path_arg(path.as_ref()))
+            .transpose()?,
         format: try_format_code,
         ..GenerateOptions::default()
     })

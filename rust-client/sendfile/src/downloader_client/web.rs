@@ -4,8 +4,8 @@ use std::rc::Rc;
 use std::task::{Context, Poll};
 
 use futures::{pin_mut, ready, AsyncWrite, Future, FutureExt, TryStreamExt};
-use std::time::Duration;
 use js_sys::{JsString, Uint8Array};
+use std::time::Duration;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
@@ -165,6 +165,6 @@ impl From<js_sys::Error> for DownloadFileWriteError {
 
 impl From<DownloadFileWriteError> for io::Error {
     fn from(from: DownloadFileWriteError) -> Self {
-        Self::new(io::ErrorKind::Other, from)
+        Self::other(from)
     }
 }

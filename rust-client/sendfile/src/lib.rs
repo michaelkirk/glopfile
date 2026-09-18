@@ -1,5 +1,5 @@
 #![allow(
-    clippy::drop_copy,
+    dropping_copy_types,
     clippy::unused_unit,
     clippy::comparison_chain,
     clippy::let_and_return,

@@ -109,7 +109,7 @@ impl super::RtcPeerConnection for NativePeerConnection {
         &mut self,
         candidate: websocket::IceCandidate,
     ) -> Result<(), Error> {
-        let candidate = candidate.try_into().map_err(Error::rtc_err)?;
+        let candidate = IceCandidate::from(candidate);
         self.rtc
             .add_remote_candidate(&candidate)
             .map_err(Error::rtc_err)?;

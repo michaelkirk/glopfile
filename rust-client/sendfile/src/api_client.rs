@@ -10,10 +10,10 @@ use std::time::Duration;
 use std::{io, mem};
 
 use backoff::ExponentialBackoff;
+use base64::engine::{general_purpose::STANDARD, Engine};
 use bytes::Bytes;
 use futures::channel::mpsc;
 use futures::{ready, AsyncRead, AsyncWrite, AsyncWriteExt, Future, FutureExt, StreamExt};
-use base64::engine::{general_purpose::STANDARD, Engine};
 use reqwest::{header, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -66,7 +66,7 @@ impl ApiClient {
         let encoded_metadata = STANDARD.encode(encrypted_metadata);
         debug!(
             "posting to url: {}, encrypted_metadata: {:?}",
-            url, &encoded_metadata
+            url, encoded_metadata
         );
 
         let form = [("encrypted_metadata", encoded_metadata)];
@@ -259,6 +259,8 @@ impl ApiClient {
         })
     }
 
+    // The whole client is single-threaded, so the shared state needn't be Send or Sync.
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn decrypt_file<F: AsyncWrite + 'static>(
         &self,
         download_meta: &DownloadMeta,
@@ -506,7 +508,7 @@ impl FileMeta {
         let string = String::from_utf8(bytes.to_vec())
             .map_err(|_| Error::InvalidInput("invalid unicode in FileMeta serialization"))?;
         serde_json::from_str::<FileMeta>(&string).map_err(|_| {
-            error!("invalid json string: {}", &string);
+            error!("invalid json string: {}", string);
             Error::InvalidInput("Invalid json in FileMeta serialization")
         })
     }
@@ -579,7 +581,7 @@ impl AsyncWrite for DecryptedFile<'_> {
                 data.extend(buf);
                 Poll::Ready(Ok(buf.len()))
             }
-            DecryptedFileWriteState::Pending { .. } | DecryptedFileWriteState::Complete { .. } => {
+            DecryptedFileWriteState::Pending { .. } | DecryptedFileWriteState::Complete => {
                 Poll::Ready(Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "received more bytes than expected",

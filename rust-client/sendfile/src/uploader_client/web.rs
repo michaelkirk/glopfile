@@ -71,10 +71,16 @@ struct UploadFile {
     pending_read: UploadFileReadState,
 }
 
+#[derive(Default)]
 enum UploadFileReadState {
+    #[default]
     Idle,
-    Reading { pending_read: PendingRead },
-    Available { data: Uint8Array },
+    Reading {
+        pending_read: PendingRead,
+    },
+    Available {
+        data: Uint8Array,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -204,12 +210,6 @@ impl AsyncRead for UploadFile {
     }
 }
 
-impl Default for UploadFileReadState {
-    fn default() -> Self {
-        Self::Idle
-    }
-}
-
 impl UploadFileReadState {
     fn insert(&mut self, pending_read: PendingRead) -> &mut PendingRead {
         *self = Self::Reading { pending_read };
@@ -232,6 +232,6 @@ impl From<js_sys::Error> for UploadFileReadError {
 
 impl From<UploadFileReadError> for io::Error {
     fn from(from: UploadFileReadError) -> Self {
-        Self::new(io::ErrorKind::Other, from)
+        Self::other(from)
     }
 }
