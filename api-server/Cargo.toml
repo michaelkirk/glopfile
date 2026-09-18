@@ -1,8 +1,14 @@
 [package]
-name = "sendfile"
+name = "sendfile-relay"
 version = "0.1.0"
 edition = "2021"
 description = "Sendfile relay"
+
+# The crate is named for the workspace, where rust-client already owns the name
+# "sendfile"; the binary keeps the name the deployment expects.
+[[bin]]
+name = "sendfile"
+path = "src/main.rs"
 
 [dependencies]
 axum = { version = "0.8.9", features = ["ws"] }
