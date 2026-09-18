@@ -1,0 +1,9 @@
+[workspace]
+members = ["rust"]
+
+[profile.release]
+# lto allows shrinking our wasm binary a bit
+lto = true
+# opt-z allows shrinking our wasm binary a bit more
+opt-level = 'z'
+

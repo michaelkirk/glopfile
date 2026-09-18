@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd $REPO_ROOT
+
+DEPLOY_NAME="$(date -u  +"%Y-%m-%d-%H:%M:%S")-$(git rev-parse --short HEAD)"
+
+HOST=sendoftheworld@s.endoftheworl.de
+DEPLOY_ROOT=/var/www/s.endoftheworl.de
+DESTINATION=$DEPLOY_ROOT/versions/$DEPLOY_NAME
+
+ssh $HOST mkdir -p $DEPLOY_ROOT/versions
+
+rsync -avz --progress sendfile-ui/build/ $HOST:$DESTINATION
+ssh $HOST "ln -sfn '${DESTINATION}' '${DEPLOY_ROOT}/current'"
+
