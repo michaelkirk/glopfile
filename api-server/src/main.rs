@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
-use sendfile::api;
-use sendfile::registry::Registry;
+use sendfile_relay::api;
+use sendfile_relay::registry::Registry;
 use tokio::net::TcpListener;
 
 const DEFAULT_LISTEN_ADDR: &str = "0.0.0.0:8080";
