@@ -3,6 +3,7 @@
 use std::convert::Infallible;
 
 use axum::body::{Body, Bytes};
+use axum::extract::rejection::FormRejection;
 use axum::extract::ws::rejection::WebSocketUpgradeRejection;
 use axum::extract::{Form, Path, State, WebSocketUpgrade};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
@@ -23,11 +24,13 @@ use crate::websocket;
 
 pub fn router(registry: Registry) -> Router {
     let api = Router::new()
+        .route("/v1/health_check", get(health_check))
         .route("/v1/files", post(create_file))
         .route("/v1/download/{id}", get(download_meta))
         .route("/v1/download/{id}/content", get(download_content))
         .route("/v1/download/{id}/ws", any(download_websocket))
         .route("/v1/upload/{id}", post(upload))
+        .route("/v1/upload/{id}/start", post(start_upload))
         .route("/v1/upload/{id}/ws", any(upload_websocket))
         .route("/v1/content/{id}", get(download_content))
         .fallback(|| async { ApiError::NotFound })
@@ -35,6 +38,10 @@ pub fn router(registry: Registry) -> Router {
         .with_state(registry);
 
     Router::new().nest("/api", api)
+}
+
+async fn health_check() -> Json<UploadResponse> {
+    Json(UploadResponse::Ok)
 }
 
 #[derive(Deserialize)]
@@ -50,7 +57,7 @@ struct CreateFileResponse {
 
 async fn create_file(
     State(registry): State<Registry>,
-    form: Result<Form<CreateFileRequest>, axum::extract::rejection::FormRejection>,
+    form: Result<Form<CreateFileRequest>, FormRejection>,
 ) -> Result<Json<CreateFileResponse>, ApiError> {
     let Ok(Form(request)) = form else {
         return Err(ApiError::Invalid("metadata missing"));
@@ -155,6 +162,35 @@ struct UploadConflictResponse {
     position: u64,
 }
 
+/// The body of every upload response that is not a position conflict.
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum UploadResponse {
+    Ok,
+    Error { reason: &'static str },
+}
+
+#[derive(Deserialize)]
+struct StartUploadRequest {
+    position: u64,
+}
+
+/// Lets an uploader check where to resume from before it starts sending content.
+async fn start_upload(
+    State(registry): State<Registry>,
+    Path(id): Path<String>,
+    form: Result<Form<StartUploadRequest>, FormRejection>,
+) -> Result<Response, ApiError> {
+    let Ok(Form(request)) = form else {
+        return Err(ApiError::Invalid("position missing"));
+    };
+    let session = lookup(&registry, &id)?;
+    match session.check_start_upload(request.position).await {
+        Ok(()) => Ok(Json(UploadResponse::Ok).into_response()),
+        Err(error) => upload_error(error),
+    }
+}
+
 async fn upload(
     State(registry): State<Registry>,
     Path(id): Path<String>,
@@ -191,7 +227,7 @@ async fn upload(
             Chunk::More(data)
         };
         match session.upload_data(token, chunk).await {
-            Ok(()) if last => return Ok(().into_response()),
+            Ok(()) if last => return Ok(Json(UploadResponse::Ok).into_response()),
             Ok(()) => {}
             Err(error) => return upload_error(error),
         }
@@ -201,17 +237,18 @@ async fn upload(
 /// Answers an upload request that the session would not accept. Only a position
 /// mismatch is the uploader's problem; the rest mean the transfer is over.
 fn upload_error(error: UploadError) -> Result<Response, ApiError> {
-    match error {
-        UploadError::NotFound => Err(ApiError::NotFound),
-        UploadError::Position(position) => Ok((
-            StatusCode::CONFLICT,
-            Json(UploadConflictResponse { position }),
-        )
-            .into_response()),
-        UploadError::Finished | UploadError::ConnectionReplaced | UploadError::DataPending => {
-            Ok(().into_response())
+    let reason = match error {
+        UploadError::NotFound => return Err(ApiError::NotFound),
+        UploadError::Position(position) => {
+            let conflict = Json(UploadConflictResponse { position });
+            return Ok((StatusCode::CONFLICT, conflict).into_response());
         }
-    }
+        // The content already reached the downloader, so the uploader is done.
+        UploadError::Finished => return Ok(Json(UploadResponse::Ok).into_response()),
+        UploadError::ConnectionReplaced => "connection_replaced",
+        UploadError::DataPending => "data_pending",
+    };
+    Ok(Json(UploadResponse::Error { reason }).into_response())
 }
 
 fn read_failed(error: axum::Error) -> ApiError {

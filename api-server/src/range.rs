@@ -38,7 +38,8 @@ pub fn download_position(headers: &HeaderMap) -> Result<DownloadPosition, &'stat
 }
 
 /// Parses `Content-Range: bytes <position>-<last>/<size>`, defaulting to the start of
-/// the content when the header is absent or the uploader has nothing left to send.
+/// the content when the header is absent. `bytes */<size>` means the uploader has
+/// nothing left to send and is waiting for the downloader to catch up.
 pub fn upload_position(headers: &HeaderMap) -> Result<Position, &'static str> {
     let Some(value) = headers.get(header::CONTENT_RANGE) else {
         return Ok(0);
@@ -51,7 +52,7 @@ pub fn upload_position(headers: &HeaderMap) -> Result<Position, &'static str> {
     let (range, size) = spec.rsplit_once('/').ok_or("malformed content range")?;
 
     if range == "*" {
-        return Ok(0);
+        return size.parse().map_err(|_| "malformed content range");
     }
     let (start, end) = range.split_once('-').ok_or("malformed content range")?;
     let start: Position = start.parse().map_err(|_| "malformed content range")?;
@@ -94,11 +95,12 @@ mod tests {
     fn upload_ranges() {
         let at = |value| upload_position(&headers(header::CONTENT_RANGE, value));
         assert_eq!(upload_position(&HeaderMap::new()), Ok(0));
-        assert_eq!(at("bytes */100"), Ok(0));
+        assert_eq!(at("bytes */100"), Ok(100));
         assert_eq!(at("bytes 0-99/100"), Ok(0));
         assert_eq!(at("bytes 40-99/100"), Ok(40));
         assert!(at("bytes 0-49/100").is_err());
         assert!(at("bytes 0-99/*").is_err());
+        assert!(at("bytes */*").is_err());
         assert!(at("items 0-99/100").is_err());
     }
 }

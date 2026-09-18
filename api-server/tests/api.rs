@@ -264,7 +264,7 @@ async fn transfer_relays_content_to_the_downloader() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(response.bytes().await.unwrap().is_empty());
+    assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
 
     let downloaded = download.await.unwrap();
     assert_eq!(downloaded.status(), StatusCode::OK);
@@ -512,4 +512,142 @@ async fn transfer_relays_content_larger_than_one_chunk() {
     assert_eq!(response.status(), StatusCode::OK);
 
     assert_eq!(download.await.unwrap().bytes().await.unwrap(), content);
+}
+
+#[tokio::test]
+async fn health_check_reports_ok() {
+    let server = Server::start().await;
+    let response = server
+        .client
+        .get(server.url("/api/v1/health_check"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
+}
+
+#[tokio::test]
+async fn start_upload_accepts_the_expected_position() {
+    let server = Server::start().await;
+    let id = server.provision().await;
+
+    let response = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{id}/start")))
+        .form(&[("position", 0)])
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
+}
+
+#[tokio::test]
+async fn start_upload_reports_the_downloader_position() {
+    let server = Server::start().await;
+    let id = server.provision().await;
+
+    let content_url = server.url(&format!("/api/v1/download/{id}/content"));
+    let client = server.client.clone();
+    let _download = tokio::spawn(async move { client.get(content_url).send().await.unwrap() });
+    settle().await;
+
+    let response = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{id}/start")))
+        .form(&[("position", 5)])
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response.json::<Value>().await.unwrap()["position"]
+            .as_u64()
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn start_upload_does_not_connect_an_uploader() {
+    let server = Server::start().await;
+    let id = server.provision().await;
+
+    // Checking twice in a row must not look like a replaced connection.
+    for _ in 0..2 {
+        let response = server
+            .client
+            .post(server.url(&format!("/api/v1/upload/{id}/start")))
+            .form(&[("position", 0)])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
+    }
+}
+
+#[tokio::test]
+async fn start_upload_without_a_position_returns_400() {
+    let server = Server::start().await;
+    let id = server.provision().await;
+
+    let response = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{id}/start")))
+        .form(&[("unrelated", "field")])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn start_upload_for_a_nonexistent_session_returns_404() {
+    let server = Server::start().await;
+    let response = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{NONEXISTENT_ID}/start")))
+        .form(&[("position", 0)])
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn upload_past_the_end_waits_for_the_downloader_to_finish() {
+    let server = Server::start().await;
+    let id = server.provision().await;
+
+    // The downloader already holds the whole file and is waiting for the stream to end.
+    let size = CONTENT.len();
+    let content_url = server.url(&format!("/api/v1/download/{id}/content"));
+    let client = server.client.clone();
+    let download = tokio::spawn(async move {
+        client
+            .get(content_url)
+            .header(header::RANGE, format!("bytes={size}-"))
+            .send()
+            .await
+            .unwrap()
+    });
+    settle().await;
+
+    let response = server
+        .client
+        .post(server.url(&format!("/api/v1/upload/{id}")))
+        .header(header::CONTENT_RANGE, format!("bytes */{size}"))
+        .body(Vec::new())
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.json::<Value>().await.unwrap()["status"], "ok");
+    assert!(download.await.unwrap().bytes().await.unwrap().is_empty());
 }

@@ -140,6 +140,13 @@ impl Session {
         self.request(Command::FinishDownload).await
     }
 
+    /// Reports whether an uploader could start at `position`, without connecting it.
+    pub async fn check_start_upload(&self, position: Position) -> Result<(), UploadError> {
+        self.request(|reply| Command::CheckStartUpload { position, reply })
+            .await
+            .unwrap_or(Err(UploadError::NotFound))
+    }
+
     pub async fn start_upload(&self, token: Token, position: Position) -> Result<(), UploadError> {
         self.request(|reply| Command::StartUpload {
             token,
@@ -200,6 +207,10 @@ enum Command {
         reply: oneshot::Sender<()>,
     },
     FinishDownload(oneshot::Sender<()>),
+    CheckStartUpload {
+        position: Position,
+        reply: Waiter,
+    },
     StartUpload {
         token: Token,
         position: Position,
@@ -296,6 +307,9 @@ impl State {
                 let _ = reply.send(());
             }
             Command::FinishDownload(reply) => return self.finish_download(reply),
+            Command::CheckStartUpload { position, reply } => {
+                let _ = reply.send(self.check_start_position(position));
+            }
             Command::StartUpload {
                 token,
                 position,
@@ -375,10 +389,25 @@ impl State {
             self.uploader = None;
         }
 
+        if let Err(error) = self.check_start_position(position) {
+            let _ = reply.send(Err(error));
+            return;
+        }
+
+        if matches!(self.pending, Pending::Error(_)) {
+            self.pending = Pending::None;
+        }
+        send_upload_progress(&self.uploader_ws, position);
+        self.uploader = Some(Uploader { token, position });
+        let _ = reply.send(Ok(()));
+    }
+
+    /// An uploader may only start where the downloader, or the chunk already queued
+    /// for it, expects the content to continue.
+    fn check_start_position(&self, position: Position) -> Result<(), UploadError> {
         if let DownloaderSlot::Connected(downloader) = &self.downloader {
             if position != downloader.position {
-                let _ = reply.send(Err(UploadError::Position(downloader.position)));
-                return;
+                return Err(UploadError::Position(downloader.position));
             }
         }
         if let Pending::Data {
@@ -389,17 +418,10 @@ impl State {
         {
             let expected = pending + size;
             if position != expected {
-                let _ = reply.send(Err(UploadError::Position(expected)));
-                return;
+                return Err(UploadError::Position(expected));
             }
         }
-
-        if matches!(self.pending, Pending::Error(_)) {
-            self.pending = Pending::None;
-        }
-        send_upload_progress(&self.uploader_ws, position);
-        self.uploader = Some(Uploader { token, position });
-        let _ = reply.send(Ok(()));
+        Ok(())
     }
 
     fn upload_data(&mut self, token: Token, chunk: Chunk, reply: Waiter) {

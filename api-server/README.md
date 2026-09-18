@@ -43,5 +43,7 @@ All endpoints live under `/api/v1` and answer `OPTIONS` with permissive CORS hea
 | `GET /download/{id}` | Returns the session's `meta` and its `encrypted_content_url`. |
 | `GET /download/{id}/content` | Streams the content. `Range: bytes=<position>-` resumes; `Range: bytes=-0` marks the download finished. |
 | `GET /content/{id}` | Alias for `/download/{id}/content`. |
-| `POST /upload/{id}` | Sends content. `Content-Range: bytes <position>-<last>/<size>` resumes. A `409` carries the `position` the downloader expects. |
+| `POST /upload/{id}/start` | Asks, via the `position` form field, whether an upload may start there. `200 {"status":"ok"}` or `409 {"position":N}`. |
+| `POST /upload/{id}` | Sends content. `Content-Range: bytes <position>-<last>/<size>` resumes; `bytes */<size>` waits at EOF for the downloader. Answers `{"status":"ok"}` or `{"status":"error","reason":...}`, or `409 {"position":N}`. |
+| `GET /health_check` | Liveness check; returns `{"status":"ok"}`. |
 | `GET /download/{id}/ws`, `GET /upload/{id}/ws` | Relays websocket frames between the two peers, and sends the uploader progress acks. |
