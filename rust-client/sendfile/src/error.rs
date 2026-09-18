@@ -69,19 +69,64 @@ pub(crate) trait IntoResultExt: Sized {
     fn ok_or(self, message: &'static str) -> Result<Self::Output, Error>;
 }
 
-pub(crate) trait IntoRetriableResultExt: Sized {
-    type Output;
-    fn ok_or_retriable_err(
-        self,
-        message: &'static str,
-    ) -> Result<Self::Output, backoff::Error<Error>>;
+/// An error on its way out of a retry attempt.
+///
+/// Most errors classify themselves via [`Error::retriability`]; the constructors
+/// here are for the few call sites that know better than the general rule.
+#[derive(Debug)]
+pub(crate) struct RetryError {
+    error: Error,
+    override_: Option<Retriability>,
 }
 
-pub(crate) trait AsRetriableResultExt: Sized {
-    type Output;
-    // TODO We should probably rename to IntoRetriableResultExt, but that already exists...
-    #[allow(clippy::wrong_self_convention)]
-    fn as_retriable_result(self) -> Result<Self::Output, backoff::Error<Error>>;
+impl RetryError {
+    /// Give up regardless of what the error would otherwise say.
+    pub(crate) fn permanent(error: impl Into<Error>) -> Self {
+        Self { error: error.into(), override_: Some(Retriability::Permanent) }
+    }
+
+    /// Retry regardless of what the error would otherwise say.
+    pub(crate) fn transient(error: impl Into<Error>) -> Self {
+        Self { error: error.into(), override_: Some(Retriability::Transient) }
+    }
+
+    pub(crate) fn retriability(&self) -> Retriability {
+        self.override_.unwrap_or_else(|| self.error.retriability())
+    }
+}
+
+impl From<RetryError> for Error {
+    fn from(from: RetryError) -> Self {
+        from.error
+    }
+}
+
+macro_rules! retry_error_from {
+    ($($source:ty),* $(,)?) => {
+        $(impl From<$source> for RetryError {
+            fn from(error: $source) -> Self {
+                Self { error: error.into(), override_: None }
+            }
+        })*
+    };
+}
+retry_error_from!(
+    Error,
+    reqwest::Error,
+    std::io::Error,
+    TimeoutError,
+    WebSocketError
+);
+
+/// How the retry loop should treat an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Retriability {
+    /// Retrying will not help.
+    Permanent,
+    /// Retry on the usual backoff schedule.
+    Transient,
+    /// Retry, but not before the server-requested delay has elapsed.
+    After(Duration),
 }
 
 impl Error {
@@ -129,37 +174,22 @@ impl IntoResultExt for Response {
     }
 }
 
-impl<T: IntoResultExt> IntoRetriableResultExt for T {
-    type Output = T::Output;
-    fn ok_or_retriable_err(
-        self,
-        message: &'static str,
-    ) -> Result<Self::Output, backoff::Error<Error>> {
-        self.ok_or(message).as_retriable_result()
-    }
-}
-
-impl<T, E> AsRetriableResultExt for Result<T, E>
-where
-    Error: From<E>,
-{
-    type Output = T;
-    fn as_retriable_result(self) -> Result<T, backoff::Error<Error>> {
-        self.map_err(Error::from).map_err(|error| match &error {
+impl Error {
+    pub(crate) fn retriability(&self) -> Retriability {
+        match self {
             Error::ClientHttpErrorResponse { retry_after: Some(retry_after), .. } => {
-                let retry_after = *retry_after;
-                backoff::Error::retry_after(error, retry_after)
+                Retriability::After(*retry_after)
             }
             Error::ClientHttpErrorResponse { status, retry_after: None, .. } => {
                 match StatusCode::from_u16(*status) {
-                    Ok(status) if status.is_server_error() => backoff::Error::transient(error),
-                    Ok(_status) => backoff::Error::permanent(error),
+                    Ok(status) if status.is_server_error() => Retriability::Transient,
+                    Ok(_status) => Retriability::Permanent,
                     Err(status_error) => {
                         warn!(
-                            "invalid HTTP status code {status} from server in response {error}: \
+                            "invalid HTTP status code {status} from server in response {self}: \
                              {status_error}"
                         );
-                        backoff::Error::permanent(error)
+                        Retriability::Permanent
                     }
                 }
             }
@@ -174,17 +204,13 @@ where
                     | InvalidFrameData
                     | MissingStatusCode
                     | UnsupportedFrameType
-                    | ProtocolError => backoff::Error::permanent(error),
-                    ConnectionClosed | InternalServerError | TlsError => {
-                        backoff::Error::transient(error)
-                    }
+                    | ProtocolError => Retriability::Permanent,
+                    ConnectionClosed | InternalServerError | TlsError => Retriability::Transient,
                 }
             }
-            Error::HTTPClient { .. } | Error::IO { .. } | Error::Timeout => {
-                backoff::Error::transient(error)
-            }
-            _ => backoff::Error::permanent(error),
-        })
+            Error::HTTPClient { .. } | Error::IO { .. } | Error::Timeout => Retriability::Transient,
+            _ => Retriability::Permanent,
+        }
     }
 }
 
@@ -195,23 +221,10 @@ mod tests {
 
     use super::*;
 
-    /// How the retry loop should treat an error, flattened for comparison.
-    #[derive(Debug, PartialEq, Eq)]
-    enum Classified {
-        Permanent,
-        Transient,
-        After(Duration),
-    }
+    use Retriability as Classified;
 
     fn classify(error: Error) -> Classified {
-        match Result::<(), Error>::Err(error).as_retriable_result() {
-            Err(backoff::Error::Permanent(_)) => Classified::Permanent,
-            Err(backoff::Error::Transient { retry_after: Some(after), .. }) => {
-                Classified::After(after)
-            }
-            Err(backoff::Error::Transient { retry_after: None, .. }) => Classified::Transient,
-            Ok(()) => unreachable!("built from an Err"),
-        }
+        error.retriability()
     }
 
     fn http(status: u16, retry_after: Option<Duration>) -> Error {
@@ -235,6 +248,7 @@ mod tests {
     fn only_server_errors_are_retried() {
         assert_eq!(classify(http(500, None)), Classified::Transient);
         assert_eq!(classify(http(503, None)), Classified::Transient);
+        assert_eq!(classify(http(409, None)), Classified::Permanent);
         assert_eq!(classify(http(429, None)), Classified::Permanent);
         assert_eq!(classify(http(404, None)), Classified::Permanent);
         assert_eq!(classify(http(400, None)), Classified::Permanent);
@@ -283,6 +297,34 @@ mod tests {
             Classified::Transient
         );
         assert_eq!(classify(Error::Timeout), Classified::Transient);
+    }
+
+    #[test]
+    fn call_sites_can_override_the_table() {
+        // a spurious 409 is retried although 4xx is otherwise permanent
+        assert_eq!(classify(http(409, None)), Classified::Permanent);
+        assert_eq!(
+            RetryError::transient(http(409, None)).retriability(),
+            Classified::Transient
+        );
+
+        // a failed write to the output file is not worth re-downloading for
+        let disk_error = || Error::IO { source: io::Error::other("disk full") };
+        assert_eq!(classify(disk_error()), Classified::Transient);
+        assert_eq!(
+            RetryError::permanent(disk_error()).retriability(),
+            Classified::Permanent
+        );
+    }
+
+    #[test]
+    fn errors_classify_themselves_unless_overridden() {
+        let error = || http(503, None);
+        assert_eq!(
+            RetryError::from(error()).retriability(),
+            Classified::Transient
+        );
+        assert_eq!(classify(error()), RetryError::from(error()).retriability());
     }
 
     #[test]

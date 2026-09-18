@@ -15,7 +15,6 @@ use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use backoff::ExponentialBackoff;
 use derive_more::From;
 use futures::channel::oneshot;
 use futures::future::{abortable, AbortHandle, Aborted, Shared};
@@ -23,7 +22,7 @@ use futures::FutureExt;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use thiserror::Error;
 
-use crate::error::AsRetriableResultExt;
+use crate::error::RetryError;
 use crate::util::retry;
 use crate::util::spawn_local;
 
@@ -166,7 +165,7 @@ impl WebSocketClient {
         let connection = Arc::new(Mutex::new(connection_rx.shared()));
         let connection_2 = Arc::clone(&connection);
 
-        let websocket_task = retry(ExponentialBackoff::default(), move || {
+        let websocket_task = retry(move || {
             let (url, handler, connection) = (url.clone(), handler.clone(), connection_2.clone());
             let (new_connection_tx, new_connection_rx) = oneshot::channel();
             let connection_tx = mem::replace(&mut connection_tx, new_connection_tx);
@@ -176,7 +175,7 @@ impl WebSocketClient {
                 if let Err(error) = &connect_result {
                     warn!("error connecting to websocket: {error}");
                 }
-                let websocket = connect_result.as_retriable_result()?;
+                let websocket = connect_result?;
 
                 let _ignore = connection_tx.send(websocket.clone());
 
@@ -194,7 +193,7 @@ impl WebSocketClient {
                 *connection.lock().unwrap() = new_connection_rx.shared();
 
                 // Return an error to potentially trigger reconnect
-                join_result.as_retriable_result()
+                join_result.map_err(RetryError::from)
             }
         });
         let (websocket_task, websocket_task_handle) = abortable(websocket_task);

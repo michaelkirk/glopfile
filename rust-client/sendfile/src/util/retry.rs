@@ -1,58 +1,40 @@
 use std::time::Duration;
 
-use backoff::backoff::Backoff;
-use backoff::future::Retry;
-use backoff::Notify;
+use backon::{ExponentialBuilder, Retryable};
 use futures::Future;
 use http::header;
 use http::header::HeaderValue;
 
+use crate::error::{Retriability, RetryError};
 use crate::Error;
 
-use super::timeout::{send_sleep, SendSleep};
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct NoopNotify;
-impl<E> Notify<E> for NoopNotify {
-    fn notify(&mut self, _error: E, _duration: Duration) {}
+/// 500ms, growing by half each time, jittered, never waiting more than a minute
+/// at once nor retrying for more than a quarter of an hour.
+fn schedule() -> ExponentialBuilder {
+    ExponentialBuilder::new()
+        .with_min_delay(Duration::from_millis(500))
+        .with_factor(1.5)
+        .with_jitter()
+        .with_max_delay(Duration::from_secs(60))
+        .without_max_times()
+        .with_total_delay(Some(Duration::from_secs(900)))
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct Sleeper;
-
-impl backoff::future::Sleeper for Sleeper {
-    type Sleep = SendSleep;
-
-    fn sleep(&self, duration: Duration) -> Self::Sleep {
-        send_sleep(duration)
-    }
-}
-
-pub(crate) fn retry<I, E, Fn, Fut, B>(
-    backoff: B,
-    operation: Fn,
-) -> Retry<Sleeper, B, NoopNotify, Fn, Fut>
+/// Retries `operation` until it succeeds, fails permanently, or runs out of time.
+pub(crate) async fn retry<T, Fut, OperationFn>(operation: OperationFn) -> Result<T, Error>
 where
-    B: Backoff,
-    Fn: FnMut() -> Fut,
-    Fut: Future<Output = Result<I, backoff::Error<E>>>,
+    OperationFn: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, RetryError>>,
 {
-    retry_notify(backoff, operation, NoopNotify)
-}
-
-pub(crate) fn retry_notify<I, E, Fn, Fut, B, N>(
-    mut backoff: B,
-    operation: Fn,
-    notify: N,
-) -> Retry<Sleeper, B, N, Fn, Fut>
-where
-    B: Backoff,
-    Fn: FnMut() -> Fut,
-    Fut: Future<Output = Result<I, backoff::Error<E>>>,
-    N: Notify<E>,
-{
-    backoff.reset();
-    Retry::new(Sleeper, backoff, notify, operation)
+    operation
+        .retry(schedule())
+        .when(|error: &RetryError| error.retriability() != Retriability::Permanent)
+        .adjust(|error: &RetryError, scheduled| match error.retriability() {
+            Retriability::After(retry_after) => Some(retry_after),
+            _ => scheduled,
+        })
+        .await
+        .map_err(Error::from)
 }
 
 pub(crate) trait ResponseExt: Sized {
