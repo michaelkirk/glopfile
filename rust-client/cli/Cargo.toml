@@ -1,0 +1,15 @@
+[package]
+name = "sendfile-cli"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = { version = "1.0.52", features = ["backtrace"] }
+clap = { version = "3.0.10", features = ["derive"] }
+crossbeam = "0.8.1"
+indicatif = { version = "0.17.0-rc.10", features = ["improved_unicode"] }
+pretty_env_logger = "0.4.0"
+sendfile = { path = "../sendfile" }
+url = "2.2.2"

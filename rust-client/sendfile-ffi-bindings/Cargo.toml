@@ -1,0 +1,12 @@
+[package]
+name = "sendfile-ffi-bindings"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.57"
+serde = "1.0.137"
+toml = "0.5.9"
+uniffi_bindgen = "0.18.0"

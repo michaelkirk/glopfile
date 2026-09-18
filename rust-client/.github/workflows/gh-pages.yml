@@ -1,0 +1,68 @@
+name: gh-pages
+on:
+  push:
+    branches:
+      - master
+      - gh-pages-source
+
+defaults:
+  run:
+    shell: bash
+jobs:
+  gh-pages:
+    name:    gh-pages
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v3
+
+      - name: cache cargo output
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: install rust target wasm32-unknown-unknown
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: create docs directories
+        run:  mkdir -p docs/native docs/web
+
+      - name: cargo doc
+        run:  cargo doc --verbose --lib --workspace --exclude sendfile-macros --exclude sendfile-cli --no-deps
+
+      - name: move public native docs to docs folder
+        run:  mv target/doc/ docs/native/public/
+
+      - name: cargo doc
+        run:  cargo doc --verbose --lib --workspace --no-deps --document-private-items
+
+      - name: move private native docs to docs folder
+        run:  mv target/doc/ docs/native/private/
+
+      - name: cargo doc
+        run:  cargo doc --verbose --lib --workspace --exclude sendfile-macros --exclude sendfile-cli --no-deps --target wasm32-unknown-unknown
+
+      - name: move public web docs to docs folder
+        run:  mv target/wasm32-unknown-unknown/doc/ docs/web/public/
+
+      - name: cargo doc
+        run:  cargo doc --verbose --lib --workspace --no-deps --document-private-items --target wasm32-unknown-unknown
+
+      - name: move private web docs to docs folder
+        run:  mv target/wasm32-unknown-unknown/doc/ docs/web/private/
+
+      - name: force push docs to gh-pages branch
+        run: |
+          git config user.name "Github CI -- gh-pages"
+          git config user.email "<>"
+          git add docs
+          git commit -m "render rustdocs"
+          git push -f origin HEAD:gh-pages

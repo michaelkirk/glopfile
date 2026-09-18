@@ -1,0 +1,111 @@
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use futures::{pin_mut, AsyncRead, TryStreamExt};
+use tokio::fs::File;
+use tokio_util::compat::TokioAsyncReadCompatExt;
+
+use super::{ProvisionedFile, TryClone, UploadableFile, UploaderClient};
+use crate::util::native::current_thread_block_on;
+use crate::{Error, ProgressState, Result};
+
+pub struct NativeUploadFile {
+    file: tokio_util::compat::Compat<File>,
+}
+
+pub type NativeProvisionedFile = ProvisionedFile<NativeUploadFile>;
+
+impl UploaderClient {
+    pub fn provision_file(&self, path: &std::path::Path) -> Result<NativeProvisionedFile> {
+        current_thread_block_on(async {
+            let file = tokio::fs::File::open(path).await?;
+            let file_name = path
+                .file_name()
+                .ok_or(Error::InvalidInput("invalid file path"))?
+                .to_string_lossy()
+                .to_string();
+
+            let file = NativeUploadFile { file: file.compat() };
+            self.provision_file_async(file, file_name).await
+        })
+    }
+
+    pub fn upload_provisioned_file<F: FnMut(ProgressState<u64>)>(
+        &self,
+        provisioned_file: NativeProvisionedFile,
+        mut progress_fun: F,
+    ) -> Result<()> {
+        current_thread_block_on(async {
+            let upload_progress = self.upload_provisioned_file_async(provisioned_file);
+            pin_mut!(upload_progress);
+            while let Some(progress_state) = upload_progress.try_next().await? {
+                progress_fun(progress_state);
+            }
+            Ok(())
+        })
+    }
+}
+
+impl<F: TryClone> ProvisionedFile<F> {
+    pub fn try_clone(&self) -> Result<Self> {
+        current_thread_block_on(TryClone::try_clone(self))
+    }
+}
+
+impl AsyncRead for NativeUploadFile {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.file).poll_read(cx, buf)
+    }
+
+    fn poll_read_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bufs: &mut [io::IoSliceMut<'_>],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.file).poll_read_vectored(cx, bufs)
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl UploadableFile for NativeUploadFile {
+    async fn len(&self) -> io::Result<u64> {
+        Ok(self.file.get_ref().metadata().await?.len())
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl TryClone for NativeUploadFile {
+    async fn try_clone(&self) -> Result<Self> {
+        let file = self.file.get_ref().try_clone().await?.compat();
+        Ok(Self { file })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::{init_test_logging, Transport};
+
+    mod provisioned_file_tests {
+        use super::*;
+
+        #[test]
+        fn upload_non_existent_file() {
+            init_test_logging();
+
+            let uploader = UploaderClient::new_testing(Transport::Both);
+            let path = PathBuf::from("path/to/non-existent-file");
+            assert!(matches!(
+                uploader.provision_file(&path),
+                Err(Error::IO { .. }),
+            ));
+        }
+    }
+}
