@@ -1,11 +1,22 @@
 [workspace]
-members = ["cli", "macros", "sendfile", "sendfile-ffi-bindings"]
+members = [
+    "api-server",
+    "rust-client/cli",
+    "rust-client/macros",
+    "rust-client/sendfile",
+    "rust-client/sendfile-ffi-bindings",
+]
+# ios and www-client build wasm bundles of their own, against their own pinned
+# toolchains. .worktrees holds git worktrees of this repo, whose packages belong
+# to their own checkout's workspace, not this one.
+exclude = [".worktrees", "ios", "www-client"]
 resolver = "2"
 
 [workspace.dependencies]
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"
 async-trait = "0.1.92"
+axum = { version = "0.8.9", features = ["ws"] }
 backoff = "0.4.0"
 base64 = "0.23.1"
 bytes = "1.12.1"
@@ -32,12 +43,13 @@ pretty_env_logger = "0.5.0"
 proc-macro2 = { version = "1.0.107", default-features = false }
 prost = "0.14.4"
 prost-build = "0.14.4"
+protox = "0.9.1"
 quote = "1.0.47"
 rand = "0.10.2"
 reqwest = "0.13.5"
 scopeguard = "1.2.0"
-sendfile = { path = "sendfile" }
-sendfile-macros = { path = "macros" }
+sendfile = { path = "rust-client/sendfile" }
+sendfile-macros = { path = "rust-client/macros" }
 serde = "1.0.229"
 serde_json = "1.0.151"
 sha2 = "0.11.0"
@@ -48,6 +60,8 @@ tokio = "1.53.1"
 tokio-stream = "0.1"
 tokio-tungstenite = "0.30.0"
 tokio-util = "0.7.19"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tungstenite = "0.30.0"
 uniffi = "0.32.1"
 uniffi_bindgen = "0.32.1"

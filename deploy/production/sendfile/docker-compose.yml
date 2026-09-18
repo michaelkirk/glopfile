@@ -1,8 +1,11 @@
 # Production deployment: one relay behind nginx.
 #
 # The image is the one built from api-server/Dockerfile and pushed by
-# .github/workflows/docker-image.yml; there is no separate deploy image,
+# .github/workflows/api-server.yml; there is no separate deploy image,
 # because the relay is configured entirely through the environment.
+#
+# Both containers just print to stdout and let the host collect it; drop the
+# logging blocks to fall back to whatever the docker daemon defaults to.
 services:
   load-balancer:
     image: nginx:latest
@@ -13,12 +16,8 @@ services:
     depends_on:
       - relay
     restart: unless-stopped
-    logging: &papertrail
-      driver: syslog
-      options:
-        syslog-address: "tcp+tls://logs.papertrailapp.com:47008"
-        syslog-format: rfc5424
-        tag: "{{.Name}}"
+    logging: &journal
+      driver: journald
 
   relay:
     image: ${SENDFILE_IMAGE:-ghcr.io/privacyresearchgroup/sendfile:latest}
@@ -26,4 +25,4 @@ services:
       SENDFILE_LISTEN: 0.0.0.0:8080
       RUST_LOG: info
     restart: unless-stopped
-    logging: *papertrail
+    logging: *journal
