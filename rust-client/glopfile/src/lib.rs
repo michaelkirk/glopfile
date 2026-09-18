@@ -168,12 +168,13 @@ mod tests {
         .run();
     }
 
+    /// With no peer to answer the offer, the downloader's p2p attempt times out and relay takes over.
     #[test]
     fn round_trip_fallback() {
         RoundTripTest {
-            uploader_transport: Transport::P2P,
+            uploader_transport: Transport::Relay,
             downloader_transport: Transport::Both,
-            downloader_p2p_timeout: Some(Duration::default()),
+            downloader_p2p_timeout: Some(Duration::from_secs(1)),
         }
         .run();
     }
