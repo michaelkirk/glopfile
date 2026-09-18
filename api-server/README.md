@@ -1,60 +1,47 @@
 # sendfile
 
-Sendfile relay
+Sendfile relay.
 
-## Development
+A session pairs one uploader with one downloader and streams content between them;
+nothing is stored on the server. Sessions live in memory and end when the transfer
+finishes.
 
-[Internal API Documentation](https://privacyresearchgroup.github.io/sendfile/)  
-[Integration Test Reports (`common_test`)](https://privacyresearchgroup.github.io/sendfile/ct/)
-
-## Building with docker
-
-Building with the [`container-build`](https://github.com/container-build/container-build) script requires python3 and
-docker, and builds the project within the [`erlang:latest`](https://hub.docker.com/_/erlang/) Docker image.
+## Building
 
 ```
-$ scripts/container-build rebar3 compile
+$ cargo build --release
 ```
 
-## Building without docker
-
-Building without docker requires Erlang OTP 24 (or maybe above).
+## Running
 
 ```
-$ rebar3 compile
+$ cargo run
 ```
+
+The server listens on `0.0.0.0:8080` by default; set `SENDFILE_LISTEN` to change the
+address and `RUST_LOG` to change the log level.
 
 ## Running with docker
-
-Firstly, ensure that the Erlang OTP version used to build the project closely matches that of the
-[`erlang:latest`](https://hub.docker.com/_/erlang/) image, which is the image the included
-[`Dockerfile`](Dockerfile) uses.
-
-To run the server in the background:
 
 ```
 $ container=$(docker run -p 8080:8080 --detach $(docker build -q .))
 ```
 
-To start a remote Erlang shell on the node:
+## Tests
 
 ```
-$ docker exec -it $container erl -remsh sendfile@localhost -hidden
+$ cargo test
 ```
 
-To re-compile and hot-load code changes to modules on the running node:
+## API
 
-```
-$ docker cp apps $container:/home/erlang/
-$ docker exec -u root:root $container chown -R erlang:erlang /home/erlang/apps
-$ docker exec -it $container erl -remsh sendfile@localhost -hidden
-(sendfile@localhost)1> gen_cluster_code:load_all().
-```
+All endpoints live under `/api/v1` and answer `OPTIONS` with permissive CORS headers.
 
-Only hot-load code when you know the new code will be compatible with any running state in the system.
-
-## Running without docker
-
-```
-$ rebar3 shell
-```
+| Endpoint | Description |
+| --- | --- |
+| `POST /files` | Provisions a session from the `encrypted_metadata` form field; returns `upload_url` and `download_id`. |
+| `GET /download/{id}` | Returns the session's `meta` and its `encrypted_content_url`. |
+| `GET /download/{id}/content` | Streams the content. `Range: bytes=<position>-` resumes; `Range: bytes=-0` marks the download finished. |
+| `GET /content/{id}` | Alias for `/download/{id}/content`. |
+| `POST /upload/{id}` | Sends content. `Content-Range: bytes <position>-<last>/<size>` resumes. A `409` carries the `position` the downloader expects. |
+| `GET /download/{id}/ws`, `GET /upload/{id}/ws` | Relays websocket frames between the two peers, and sends the uploader progress acks. |

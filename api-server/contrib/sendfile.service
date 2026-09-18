@@ -4,8 +4,8 @@ Wants=network-online.target
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/erl -config config/sys.config -noinput -sname sendfile@localhost -s sendfile_app
-Environment="ERL_LIBS=_build/default/lib" "HOME=/var/lib/sendfile"
+ExecStart=/usr/local/bin/sendfile
+Environment="SENDFILE_LISTEN=0.0.0.0:8080" "RUST_LOG=info"
 WorkingDirectory=/var/lib/sendfile
 User=sendfile
 DynamicUser=yes
