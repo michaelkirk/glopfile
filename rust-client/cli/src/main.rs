@@ -23,6 +23,7 @@ use url::Url;
 
 #[derive(Parser)]
 #[clap(name = "sendfile")]
+#[clap(bin_name = "sendfile")]
 #[clap(about = "send a file!", long_about = None)]
 struct Args {
     #[clap(subcommand)]
