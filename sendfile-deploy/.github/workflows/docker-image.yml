@@ -1,0 +1,35 @@
+name: docker-image
+on: [push, workflow_dispatch]
+
+defaults:
+  run:
+    shell: bash
+jobs:
+  docker-image:
+    name: docker-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: install dependencies
+        run: |
+          sudo apt update
+          sudo apt install runc containerd docker.io
+
+      - name: login to github packages
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: build and push production sendfile docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: production/sendfile
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/sendfile-deploy:latest
+          push: ${{ github.ref == 'refs/heads/master' }}

@@ -1,0 +1,23 @@
+services:
+  load-balancer:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"
+
+  session-1:
+    build: .
+    hostname: session-1.glopfile.local
+
+  session-2:
+    build: .
+    hostname: session-2.glopfile.local
+
+  relay-1:
+    build: .
+    hostname: relay-1.glopfile.local
+
+  relay-2:
+    build: .
+    hostname: relay-2.glopfile.local
