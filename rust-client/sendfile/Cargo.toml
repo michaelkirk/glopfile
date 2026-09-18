@@ -95,4 +95,4 @@ tempfile.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true
-uniffi_build = { workspace = true, features = ["builtin-bindgen"], optional = true }
+uniffi_build = { workspace = true, optional = true }

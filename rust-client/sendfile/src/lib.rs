@@ -37,14 +37,18 @@ cfg_if::cfg_if! {
     }
 }
 
+// The UDL scaffolding has to live at the crate root, since it refers to `crate::UniFfiTag`.
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+use crate::Error as SendfileError;
+#[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
+uniffi::include_scaffolding!("lib");
+
 #[cfg(all(feature = "ffi", not(target_arch = "wasm32")))]
 pub mod ffi {
-    use crate::{
+    pub use crate::{
         DownloadMeta, DownloaderClient, Error as SendfileError, FileMeta, NativeProvisionedFile,
-        Transport, UploaderClient,
+        Transport, UniFfiTag, UploaderClient,
     };
-
-    include!(concat!(env!("OUT_DIR"), "/lib.uniffi.rs"));
 }
 
 use api_client::ApiClient;
