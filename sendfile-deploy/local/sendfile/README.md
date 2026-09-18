@@ -1,45 +1,17 @@
-# Start a local cluster with docker
-
-1. Compile the erlang app
+# Local relay
 
 ```sh
-cd sendfile # (the api server)
-
-# do we need to clean the build like this?
-rm -fr _build
-
-scripts/container-build rebar3 compile
-
-# Incorporate the compiled app into a runtime container
-docker build . -t sendfile
+docker compose up --build
 ```
 
-2. build cluster-deployable nodes based on the docker container image from step 1
+Serves <http://localhost:8080>, building the relay from `api-server/`.
 
-```sh
-cd sendfile-deploy/local/sendfile
+Point a client at it with `--api-endpoint http://localhost:8080`, or for the
+web client set `REACT_APP_SENDFILE_API_ENDPOINT=http://localhost:8080` in
+`www-client/sendfile-ui/.env.local`.
 
-# NOTE: Requires Docker compose 2.0
-#
-# If you're on Mac/Windows and installed Docker Desktop, a recent enough
-# version of docker-compose should already be installed for you.  On linux,
-# however, you'll probably have to follow:
-# https://docs.docker.com/compose/cli-command/#install-on-linux
-docker compose build
-docker compose up
+To watch the relay decide things, raise the log level in `docker-compose.yml`:
+
+```yaml
+RUST_LOG: sendfile=debug
 ```
-
-## Testing network resiliency
-
-The docker compose command adds the containers to an internal network. You can
-simulate an outage by temporarily removing a node from the network.
-
-```sh
-docker network disconnect glopfile-local relay-1
-```
-
-Then re-attach it when you're done
-```sh
-docker network connect glopfile-local relay-1
-```
-

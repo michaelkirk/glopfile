@@ -1,0 +1,43 @@
+name: api-server
+
+on:
+  push:
+    paths: ['api-server/**', '.github/workflows/api-server.yml']
+  pull_request:
+    paths: ['api-server/**', '.github/workflows/api-server.yml']
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: api-server
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  docker-image:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: api-server
+          tags: ghcr.io/${{ github.repository_owner }}/sendfile:latest
+          push: ${{ github.ref == 'refs/heads/master' }}
