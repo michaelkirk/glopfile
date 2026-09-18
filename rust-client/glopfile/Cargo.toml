@@ -94,4 +94,5 @@ tempfile.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true
+protox.workspace = true
 uniffi_build = { workspace = true, optional = true }

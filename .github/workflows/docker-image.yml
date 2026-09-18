@@ -2,6 +2,8 @@ name: docker-image
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -23,11 +25,12 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Builds on every push so a broken Dockerfile is caught in review;
-      # only main is published.
+      # Builds in every pull request so a broken Dockerfile is caught in
+      # review; only main is published.
       - uses: docker/build-push-action@v6
         with:
-          context: glopfile-relay
+          context: .
+          file: glopfile-relay/Dockerfile
           load: ${{ github.ref != 'refs/heads/main' }}
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: ghcr.io/${{ github.repository_owner }}/glopfile:latest

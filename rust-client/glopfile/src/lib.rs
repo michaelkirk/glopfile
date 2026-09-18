@@ -4,6 +4,8 @@
     clippy::comparison_chain,
     clippy::let_and_return,
     clippy::let_unit_value,
+    // UniFFI generates a large metadata array in the included scaffolding.
+    clippy::large_const_arrays,
     clippy::redundant_pattern_matching,
     clippy::len_without_is_empty,
     clippy::useless_format
