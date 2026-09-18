@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+# Receive a file via a locally running relay. See bin/serve.
+#
+#   bin/receive DOWNLOAD_LINK [RECEIVE ARGS...]
+#
+# Talks to GLOPFILE_API_ENDPOINT (http://localhost:8002 by default). A --api-endpoint
+# of your own wins over the default. The file lands in the current directory.
+set -euo pipefail
+
+MANIFEST=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/Cargo.toml
+
+exec cargo run --manifest-path "$MANIFEST" -p glopfile-cli --bin glopfile -- \
+  receive --api-endpoint "${GLOPFILE_API_ENDPOINT:-http://localhost:8002}" "$@"
