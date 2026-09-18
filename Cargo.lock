@@ -1119,6 +1119,7 @@ dependencies = [
  "pretty_env_logger",
  "prost",
  "prost-build",
+ "protox",
  "rand 0.10.2",
  "reqwest",
  "scopeguard",

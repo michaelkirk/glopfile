@@ -4,6 +4,8 @@
     clippy::comparison_chain,
     clippy::let_and_return,
     clippy::let_unit_value,
+    // UniFFI generates a large metadata array in the included scaffolding.
+    clippy::large_const_arrays,
     clippy::redundant_pattern_matching,
     clippy::len_without_is_empty,
     clippy::useless_format
@@ -66,10 +68,15 @@ fn init_test_logging() {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
+    use std::sync::mpsc::{self, RecvTimeoutError};
     use std::{fs, path::Path, time::Duration};
 
     const TEST_FIXTURES_DIR: &str = "test_fixtures/";
     const SAMPLE_FILE_NAME: &str = "sample_file.txt";
+
+    /// A local transfer that takes longer than this has stalled.
+    const ROUND_TRIP_TIMEOUT: Duration = Duration::from_secs(10);
 
     struct RoundTripTest {
         uploader_transport: Transport,
@@ -77,7 +84,24 @@ mod tests {
         downloader_p2p_timeout: Option<Duration>,
     }
     impl RoundTripTest {
-        fn run(&self) {
+        /// Fails the test instead of hanging forever when a transfer stalls.
+        fn run(self) {
+            let (tx, rx) = mpsc::channel();
+            std::thread::spawn(move || {
+                let result = catch_unwind(AssertUnwindSafe(|| self.transfer()));
+                let _ignore = tx.send(result);
+            });
+
+            match rx.recv_timeout(ROUND_TRIP_TIMEOUT) {
+                Ok(Ok(())) => (),
+                Ok(Err(panic)) => resume_unwind(panic),
+                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => {
+                    panic!("transfer did not finish within {ROUND_TRIP_TIMEOUT:?}")
+                }
+            }
+        }
+
+        fn transfer(&self) {
             init_test_logging();
 
             let uploader = UploaderClient::new_testing(self.uploader_transport);
@@ -144,12 +168,13 @@ mod tests {
         .run();
     }
 
+    /// With no peer to answer the offer, the downloader's p2p attempt times out and relay takes over.
     #[test]
     fn round_trip_fallback() {
         RoundTripTest {
-            uploader_transport: Transport::P2P,
+            uploader_transport: Transport::Relay,
             downloader_transport: Transport::Both,
-            downloader_p2p_timeout: Some(Duration::default()),
+            downloader_p2p_timeout: Some(Duration::from_secs(1)),
         }
         .run();
     }
