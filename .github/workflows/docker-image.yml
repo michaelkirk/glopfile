@@ -41,18 +41,34 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # A deployment passes the relay's own arguments to the image, so the
+      # image has to hand them to the relay rather than to docker. With a
+      # command and no entrypoint, docker tries to run `--address` as a
+      # program and the container exits 127.
       - name: the image serves the api
         if: github.ref != 'refs/heads/main'
         run: |
-          docker run -d --name relay -p 127.0.0.1:8080:8080 \
-            ghcr.io/${{ github.repository_owner }}/glopfile:latest
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/v1/health_check | grep -q '"ok"'; then
-              docker rm -f relay
-              exit 0
-            fi
-            sleep 1
-          done
-          docker logs relay
-          docker rm -f relay
-          exit 1
+          set -euo pipefail
+          image=ghcr.io/${{ github.repository_owner }}/glopfile:latest
+
+          # The port the relay listens on inside is only the same as the one
+          # we publish when we ask it for one, so both are given.
+          serves() {
+            local name=$1 published=$2 inside=$3
+            shift 3
+            docker run -d --name "$name" -p "127.0.0.1:$published:$inside" "$image" "$@" > /dev/null
+            for _ in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:$published/api/v1/health_check" | grep -q '"ok"'; then
+                docker rm -f "$name" > /dev/null
+                return 0
+              fi
+              sleep 1
+            done
+            echo "$name never answered its health check" >&2
+            docker logs "$name" >&2
+            docker rm -f "$name" > /dev/null
+            return 1
+          }
+
+          serves relay-default 8080 8080
+          serves relay-arguments 8099 8099 --address 0.0.0.0 --port 8099
