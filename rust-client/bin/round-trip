@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+#
+# Send example-file to ourselves through the relay bin/serve-relay runs, with
+# both sides' logs on screen. bin/test-integration checks a transfer; this one
+# is for watching which transport a combination actually uses.
+#
+#   rust-client/bin/round-trip
+#   UPLOAD_OPTIONS=--no-p2p rust-client/bin/round-trip
+#   DOWNLOAD_OPTIONS=--no-p2p rust-client/bin/round-trip
+#
+#   # incompatible settings like this are expected to time out
+#   DOWNLOAD_OPTIONS=--no-relay UPLOAD_OPTIONS=--no-p2p rust-client/bin/round-trip
+set -uo pipefail
+
+REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+
+work_dir=$(mktemp -d)
+trap 'rm -rf "$work_dir"' EXIT
+
+export RUST_LOG=${RUST_LOG:-glopfile=info}
+
+"$REPO/bin/send" "$REPO/rust-client/example-file" ${UPLOAD_OPTIONS:-} \
+  | tee >(head -n 1 \
+      | (cd "$work_dir" && xargs "$REPO/bin/receive" ${DOWNLOAD_OPTIONS:-}) 2>&1 \
+      | sed "s/^/[recipient] /")
