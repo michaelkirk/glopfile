@@ -3,3 +3,8 @@
 // expect(element).toHaveTextContent(/react/i)
 // learn more: https://github.com/testing-library/jest-dom
 import "@testing-library/jest-dom";
+
+// The wasm client's glue reaches for these at import time; jsdom has neither.
+import { TextDecoder, TextEncoder } from "util";
+
+Object.assign(global, { TextDecoder, TextEncoder });
