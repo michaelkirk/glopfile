@@ -1,0 +1,58 @@
+name: www-client
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# gh release upload writes to the repo.
+permissions:
+  contents: write
+
+jobs:
+  www-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+          cache-dependency-path: www-client/glopfile-ui/yarn.lock
+
+      # Everything the build is, is in that script: this workflow installs
+      # what it needs and runs it, so the same command builds it by hand.
+      - run: www-client/bin/package
+
+      # Built in every pull request so a broken client is caught in review;
+      # only main is published, to a release the deploy downloads by name.
+      - name: publish the client
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create www-latest \
+            --title "web client" \
+            --notes "The web client, rebuilt from main. Deployments download glopfile-www.tar.gz from here." \
+            --prerelease || true
+          gh release upload --clobber www-latest www-client/glopfile-www.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        if: github.ref != 'refs/heads/main'
+        with:
+          name: glopfile-www
+          path: www-client/glopfile-www.tar.gz
