@@ -1,8 +1,11 @@
 [package]
 name = "glopfile-macros"
 version = "0.1.0"
-edition = "2021"
+description = "Internal procedural macros for the experimental glopfile client library"
+edition.workspace = true
 license.workspace = true
+repository.workspace = true
+readme = "../README.md"
 
 [dependencies]
 proc-macro2.workspace = true

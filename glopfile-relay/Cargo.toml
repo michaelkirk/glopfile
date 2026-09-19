@@ -1,9 +1,11 @@
 [package]
 name = "glopfile-relay"
 version = "0.1.0"
-edition = "2021"
-license.workspace = true
 description = "Glopfile relay"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
 
 
 [dependencies]
