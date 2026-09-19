@@ -37,6 +37,7 @@ class App extends React.Component<{}, AppState> {
 
     return (
       <div className="App">
+        <Disclaimer />
         <div className="nav">
           <NavLink path="/" text="send a file" /> |{" "}
           <NavLink path="/download" text="download a file" />
@@ -47,6 +48,20 @@ class App extends React.Component<{}, AppState> {
           <span className="farewell">Have a nice day. ^_^</span>
         </footer>
       </div>
+    );
+  }
+}
+
+class Disclaimer extends React.Component<{}, {}> {
+  render(): React.ReactElement {
+    return (
+      <aside className="disclaimer">
+        <b>Experimental — don't trust this.</b> Unaudited, partly LLM
+        generated, and liable to change or break without notice. The server
+        never sees your file's contents: it is encrypted here in the browser,
+        and the key stays in the link's <code>#fragment</code>, which browsers
+        do not send. That is the design, not an audited guarantee.
+      </aside>
     );
   }
 }

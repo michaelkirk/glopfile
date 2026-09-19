@@ -2,6 +2,15 @@
 
 Send a file with your iOS device!
 
+## ⚠️ Experimental — do not trust this
+
+An experiment, not something to rely on. It has not been audited, parts of it
+are LLM generated, and the protocol and formats can change without notice.
+
+The server does not have access to your file's contents, by design: the file is
+encrypted on the device before upload, and the key is only ever carried in the
+download link's fragment. That is the design, not an audited guarantee.
+
 ## Building
 
 ### Prerequisites:

@@ -24,6 +24,14 @@ body {
   font-size: 12px;
 }
 
+.disclaimer {
+  border: solid #ffd75f 1px;
+  color: #ffd75f;
+  padding: 8px;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
 .App-footer {
   margin-top: 16px;
 }

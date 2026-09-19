@@ -2,6 +2,20 @@
 
 Glopfile relay.
 
+## ⚠️ Experimental — do not trust this
+
+A rewrite-it-in-Rust of an Erlang service, written largely by an LLM and not
+reviewed to the standard a network-facing service deserves. It is an
+experiment, it has not been audited, and you should not run it anywhere it
+matters.
+
+One thing the warning does not undercut: the relay has no access to
+unencrypted file content, by design. Clients encrypt before uploading, and the
+key travels in the download URL's fragment (`#cipher_key=...`), which is never
+sent to the server. Nothing is stored, and there is no cryptographic code here
+at all — the relay moves opaque bytes between two peers. A compromised relay
+can learn things like content sizes, timing, and IP addresses.
+
 A session pairs one uploader with one downloader and streams content between them;
 nothing is stored on the server. Sessions live in memory and end when the transfer
 finishes.

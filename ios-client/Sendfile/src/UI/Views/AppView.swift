@@ -34,6 +34,7 @@ struct AppView: View {
 
     var uploadView: some View {
         VStack(alignment: .center) {
+            disclaimer
             uploadFileButton
         }
         .onChange(of: uploadFileUrl) { _ in
@@ -59,6 +60,20 @@ struct AppView: View {
                 downloadUrl = nil
             }
         }
+    }
+
+    var disclaimer: some View {
+        Text(
+            """
+            Experimental - don't trust this. Unaudited, partly LLM generated, and liable to \
+            change or break without notice. The server never sees your file's contents: it is \
+            encrypted on this device, and the key is only ever carried in the download link's \
+            fragment. That is the design, not an audited guarantee.
+            """
+        )
+        .font(.footnote)
+        .multilineTextAlignment(.center)
+        .padding()
     }
 
     var uploadFileButton: some View {
