@@ -1,8 +1,14 @@
 accepted = [
     "Apache-2.0",
     "BSD-3-Clause",
-    "LGPL-2.1",
     "ISC",
+    "LGPL-2.1",
     "MIT",
-    "MPL-2.0"
+    "MPL-2.0",
+    # foldhash, by way of hashbrown
+    "Zlib",
+    # the icu crates, by way of idna and url
+    "Unicode-3.0",
+    # the mozilla root certificates, which are data rather than code
+    "CDLA-Permissive-2.0",
 ]
