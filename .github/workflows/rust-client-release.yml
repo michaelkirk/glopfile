@@ -1,4 +1,4 @@
-name: release
+name: rust-client release
 
 on:
   push:
