@@ -1,9 +1,9 @@
-name: release
+name: rust-client release
 
 on:
   push:
     tags:
-      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'rust-client-[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
 
 env:
@@ -45,6 +45,15 @@ jobs:
       - name: set package_version
         run: echo "package_version=$(cargo pkgid --package $package_name | sed 's/.*[#@]//')" >> "$GITHUB_ENV"
 
+      - name: the tag and the crate agree
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          expected="rust-client-$package_version"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "tag $GITHUB_REF_NAME does not match $expected from Cargo.toml" >&2
+            exit 1
+          fi
+
       - name: cargo build --profile distribution
         env:
           GLOPFILE_API_ENDPOINT: ${{ secrets.GLOPFILE_API_ENDPOINT }}
@@ -65,9 +74,12 @@ jobs:
           name: ${{ env.archive_filename }}
           path: ${{ env.archive_filename }}
 
+      # Only a tag has a release to upload to; a manual run leaves the
+      # archive as a workflow artifact.
       - name: upload release archive
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$package_version" || true
-          gh release upload --clobber "$package_version" "$archive_filename"
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" || true
+          gh release upload --clobber "$GITHUB_REF_NAME" "$archive_filename"
