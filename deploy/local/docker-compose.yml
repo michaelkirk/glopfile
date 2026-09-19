@@ -5,7 +5,7 @@ services:
       context: ../../glopfile-relay
     ports:
       - "127.0.0.1:${GLOPFILE_PORT:-8080}:8080"
+    command: ["--address", "0.0.0.0", "--port", "8080"]
     environment:
-      GLOPFILE_LISTEN: 0.0.0.0:8080
       RUST_LOG: ${RUST_LOG:-glopfile=debug,info}
     restart: unless-stopped

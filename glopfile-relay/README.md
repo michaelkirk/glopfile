@@ -18,8 +18,9 @@ $ cargo build --release
 $ cargo run
 ```
 
-The server listens on `0.0.0.0:8080` by default; set `GLOPFILE_LISTEN` to change the
-address and `RUST_LOG` to change the log level.
+The server listens on `0.0.0.0:8080` by default; pass `--address` and `--port`
+to change that, and set `RUST_LOG` to change the log level. `--help` lists
+everything.
 
 ## Running with docker
 

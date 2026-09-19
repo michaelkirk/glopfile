@@ -36,7 +36,7 @@ jobs:
       - name: start the relay
         run: |
           cargo build -p glopfile-relay --bin glopfile-relay
-          GLOPFILE_LISTEN=127.0.0.1:8080 ./target/debug/glopfile-relay &
+          ./target/debug/glopfile-relay --address 127.0.0.1 --port 8080 &
           for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:8080/api/v1/health_check >/dev/null && exit 0
             sleep 1
