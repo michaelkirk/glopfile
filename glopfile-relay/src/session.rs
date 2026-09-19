@@ -4,6 +4,7 @@
 //! rendezvous between uploader and downloader needs no locking. Callers talk to it
 //! through [`Session`].
 
+use std::collections::VecDeque;
 use std::mem;
 use std::ops::ControlFlow;
 
@@ -33,6 +34,10 @@ pub enum DownloadEvent {
     Final(Bytes),
     ConnectionReplaced,
 }
+
+/// How many frames to hold for a peer that has not connected yet: an offer and the
+/// ICE candidates that follow it, for a peer that is a moment behind.
+const MAX_HELD_FRAMES: usize = 64;
 
 /// A websocket frame relayed between the two peers of a session.
 #[derive(Clone, Debug)]
@@ -101,8 +106,10 @@ impl Session {
             metadata,
             downloader: DownloaderSlot::Disconnected,
             downloader_ws: None,
+            downloader_ws_held: VecDeque::new(),
             uploader: None,
             uploader_ws: None,
+            uploader_ws_held: VecDeque::new(),
             pending: Pending::None,
         };
         tokio::spawn(state.run(receiver, registry));
@@ -280,8 +287,10 @@ struct State {
     metadata: String,
     downloader: DownloaderSlot,
     downloader_ws: Option<WebsocketPeer>,
+    downloader_ws_held: VecDeque<Frame>,
     uploader: Option<Uploader>,
     uploader_ws: Option<WebsocketPeer>,
+    uploader_ws_held: VecDeque<Frame>,
     pending: Pending,
 }
 
@@ -485,6 +494,9 @@ impl State {
     }
 
     fn start_websocket(&mut self, direction: Direction, peer: WebsocketPeer) {
+        for frame in mem::take(self.held_frames_mut(direction)) {
+            let _ = peer.commands.send(WebsocketCommand::Send(frame));
+        }
         if let Some(replaced) = self.websocket_mut(direction).replace(peer) {
             let _ = replaced.commands.send(WebsocketCommand::SessionError);
         }
@@ -495,9 +507,24 @@ impl State {
             Direction::Upload => Direction::Download,
             Direction::Download => Direction::Upload,
         };
-        if let Some(peer) = self.websocket_mut(to) {
-            let _ = peer.commands.send(WebsocketCommand::Send(frame));
+        match self.websocket_mut(to) {
+            Some(peer) => {
+                let _ = peer.commands.send(WebsocketCommand::Send(frame));
+            }
+            // The peers connect independently, so either may signal before the other arrives.
+            // Hold what they send until it does, or their offer is lost and p2p never starts.
+            None => self.hold_frame(to, frame),
         }
+    }
+
+    fn hold_frame(&mut self, to: Direction, frame: Frame) {
+        let id = self.id.clone();
+        let held = self.held_frames_mut(to);
+        if held.len() == MAX_HELD_FRAMES {
+            tracing::warn!(%id, ?to, "dropping signaling for an absent peer");
+            return;
+        }
+        held.push_back(frame);
     }
 
     fn disconnected(&mut self, token: Token, peer: Peer) -> ControlFlow<()> {
@@ -559,6 +586,13 @@ impl State {
             Direction::Download => &mut self.downloader_ws,
         }
     }
+
+    fn held_frames_mut(&mut self, direction: Direction) -> &mut VecDeque<Frame> {
+        match direction {
+            Direction::Upload => &mut self.uploader_ws_held,
+            Direction::Download => &mut self.downloader_ws_held,
+        }
+    }
 }
 
 impl Chunk {
@@ -592,4 +626,52 @@ fn send_upload_progress(uploader_ws: &Option<WebsocketPeer>, position: Position)
     };
     let frame = Frame::Binary(message.encode_to_vec().into());
     let _ = peer.commands.send(WebsocketCommand::Send(frame));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn peer() -> (WebsocketPeer, mpsc::UnboundedReceiver<WebsocketCommand>) {
+        let (commands, received) = mpsc::unbounded_channel();
+        (
+            WebsocketPeer {
+                token: Token::new(),
+                commands,
+            },
+            received,
+        )
+    }
+
+    fn frame(body: &str) -> Frame {
+        Frame::Text(body.to_string())
+    }
+
+    fn sent(received: &mut mpsc::UnboundedReceiver<WebsocketCommand>) -> Vec<String> {
+        let mut frames = vec![];
+        while let Ok(WebsocketCommand::Send(Frame::Text(body))) = received.try_recv() {
+            frames.push(body);
+        }
+        frames
+    }
+
+    #[tokio::test]
+    async fn signaling_waits_for_a_peer_that_has_not_connected_yet() {
+        let session = Registry::new().create("metadata".to_string());
+
+        let (downloader, _downloader_received) = peer();
+        session
+            .start_websocket(Direction::Download, downloader)
+            .await
+            .expect("session accepts the downloader");
+        session.websocket_data(Direction::Download, frame("offer"));
+
+        let (uploader, mut uploader_received) = peer();
+        session
+            .start_websocket(Direction::Upload, uploader)
+            .await
+            .expect("session accepts the uploader");
+
+        assert_eq!(sent(&mut uploader_received), ["offer"]);
+    }
 }
