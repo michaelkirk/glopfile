@@ -1,0 +1,77 @@
+#!/bin/bash
+#
+# Send a file to ourselves through a throwaway relay.
+#
+#   bin/test-integration
+#
+# Runs on GLOPFILE_PORT (8003 by default), so it won't collide with a bin/serve
+# you already have running. Runs the built binaries rather than `cargo run`, so
+# the relay can be reliably killed on exit.
+set -euo pipefail
+
+REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+TARGET=${CARGO_TARGET_DIR:-$REPO/target}/debug
+PORT=${GLOPFILE_PORT:-8003}
+ENDPOINT=http://127.0.0.1:$PORT
+FILE_SIZE=1048576
+
+work_dir=$(mktemp -d)
+relay_pid=""
+send_pid=""
+
+cleanup() {
+  [ -n "$send_pid" ] && kill "$send_pid" 2>/dev/null || true
+  [ -n "$relay_pid" ] && kill "$relay_pid" 2>/dev/null || true
+  rm -rf "$work_dir"
+}
+trap cleanup EXIT
+
+fail() {
+  echo "FAIL: $*" >&2
+  [ -s "$work_dir/relay.log" ] && { echo "--- relay ---" >&2; cat "$work_dir/relay.log" >&2; }
+  [ -s "$work_dir/send.log" ] && { echo "--- send ---" >&2; cat "$work_dir/send.log" >&2; }
+  exit 1
+}
+
+cargo build --manifest-path "$REPO/Cargo.toml" -p glopfile-relay -p glopfile-cli
+
+"$TARGET/glopfile-relay" --address 127.0.0.1 --port "$PORT" > "$work_dir/relay.log" 2>&1 &
+relay_pid=$!
+disown "$relay_pid"
+
+for _ in $(seq 1 30); do
+  curl -fsS "$ENDPOINT/api/v1/health_check" > /dev/null 2>&1 && break
+  kill -0 "$relay_pid" 2>/dev/null || fail "relay exited"
+  sleep 1
+done
+curl -fsS "$ENDPOINT/api/v1/health_check" > /dev/null || fail "relay never became healthy on port $PORT"
+
+head -c "$FILE_SIZE" /dev/urandom > "$work_dir/sent.bin"
+
+"$TARGET/glopfile" send --api-endpoint "$ENDPOINT" "$work_dir/sent.bin" \
+  > "$work_dir/link.txt" 2> "$work_dir/send.log" &
+send_pid=$!
+
+for _ in $(seq 1 60); do
+  [ -s "$work_dir/link.txt" ] && break
+  kill -0 "$send_pid" 2>/dev/null || fail "sender exited before printing a download link"
+  sleep 1
+done
+[ -s "$work_dir/link.txt" ] || fail "sender never printed a download link"
+
+mkdir "$work_dir/received"
+(cd "$work_dir/received" && "$TARGET/glopfile" receive --api-endpoint "$ENDPOINT" "$(cat "$work_dir/link.txt")") \
+  || fail "receive failed"
+
+wait "$send_pid" || fail "sender exited non-zero"
+send_pid=""
+
+cmp "$work_dir/sent.bin" "$work_dir/received/sent.bin" || fail "received file differs from the one sent"
+
+if grep -q ERROR "$work_dir/send.log"; then
+  echo "--- send ---" >&2
+  grep ERROR "$work_dir/send.log" >&2
+  fail "sender logged errors"
+fi
+
+echo "ok: round-tripped $FILE_SIZE bytes through a relay on port $PORT"

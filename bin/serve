@@ -1,0 +1,16 @@
+#!/bin/bash
+#
+# Run the relay locally for development.
+#
+#   bin/serve [RELAY ARGS...]
+#
+# Listens on GLOPFILE_ADDRESS:GLOPFILE_PORT (127.0.0.1:8002 by default). Extra
+# arguments go to the relay, and a repeated flag there wins over the default.
+set -euo pipefail
+
+MANIFEST=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/Cargo.toml
+
+exec cargo run --manifest-path "$MANIFEST" -p glopfile-relay --bin glopfile-relay -- \
+  --address "${GLOPFILE_ADDRESS:-127.0.0.1}" \
+  --port "${GLOPFILE_PORT:-8002}" \
+  "$@"
