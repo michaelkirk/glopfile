@@ -14,4 +14,6 @@ RUN useradd --create-home --user-group glopfile
 COPY --from=build /build/target/release/glopfile-relay /usr/local/bin/glopfile-relay
 USER glopfile
 EXPOSE 8080
-CMD ["glopfile-relay"]
+# An entrypoint rather than a command, so that `docker run <image> --port 9000`
+# reaches the relay instead of asking docker to run `--port` as a program.
+ENTRYPOINT ["glopfile-relay"]
