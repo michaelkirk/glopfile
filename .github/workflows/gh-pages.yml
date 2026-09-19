@@ -36,7 +36,11 @@ jobs:
           cargo doc --lib --workspace --no-deps --document-private-items
           mv target/doc/ docs/native/private/
 
+      # getrandom needs to be told which wasm backend to use, or it refuses to
+      # build for wasm32-unknown-unknown at all.
       - name: render web docs
+        env:
+          RUSTFLAGS: --cfg getrandom_backend="wasm_js"
         run: |
           cargo doc --lib --workspace --no-deps --target wasm32-unknown-unknown \
             --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
