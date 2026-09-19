@@ -95,7 +95,7 @@ impl DownloaderClient {
                         .await
                 }
                 Transport::P2P => {
-                    self.download_p2p(meta, &mut state, None, RelayFallback::Forbidden)
+                    self.download_p2p(meta, &mut state, p2p_timeout, RelayFallback::Forbidden)
                         .await
                 }
                 Transport::Relay => {
