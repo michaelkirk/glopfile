@@ -4,7 +4,7 @@
 #
 #   bin/test-integration
 #
-# Runs on GLOPFILE_PORT (8003 by default), so it won't collide with a bin/serve
+# Runs on GLOPFILE_PORT (8003 by default), so it won't collide with a bin/serve-relay
 # you already have running. Runs the built binaries rather than `cargo run`, so
 # the relay can be reliably killed on exit.
 set -euo pipefail

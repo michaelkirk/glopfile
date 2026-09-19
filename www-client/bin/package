@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+#
+# Build the web client and pack it for a deployment to unpack into its web
+# root. The workflow that publishes it runs this and nothing else; run it
+# yourself the same way.
+#
+#   www-client/bin/package [OUTPUT]
+#
+# Needs wasm-pack and yarn. REACT_APP_GLOPFILE_API_ENDPOINT names the relay
+# the build talks to, defaulting to the one in glopfile-ui/.env.
+set -euo pipefail
+
+WWW_CLIENT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+output=${1:-$WWW_CLIENT/glopfile-www.tar.gz}
+
+"$WWW_CLIENT/bin/clean-build"
+
+# Packed from inside build/, so it unpacks as the web root's contents rather
+# than as a directory to look inside.
+tar -czf "$output" -C "$WWW_CLIENT/glopfile-ui/build" .
+
+echo "packed $(du -h "$output" | cut -f1) into $output"

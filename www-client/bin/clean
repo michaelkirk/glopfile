@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+WWW_CLIENT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$WWW_CLIENT"
+
+rm -fr glopfile-ui/build
+rm -fr glopfile/dist
+

@@ -1,0 +1,23 @@
+#!/bin/bash
+#
+# Run the web client locally for development.
+#
+#   bin/serve-www
+#
+# Talks to the relay from bin/serve-relay (127.0.0.1:8002 by default) and
+# serves the client on PORT (3000 by default).
+set -euo pipefail
+
+REPO=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+UI="$REPO/www-client/glopfile-ui"
+
+if [ ! -d "$REPO/www-client/rust/pkg" ]; then
+  echo "the wasm client has not been built; run www-client/bin/clean-build first" >&2
+  exit 1
+fi
+
+[ -d "$UI/node_modules" ] || (cd "$UI" && yarn install)
+
+cd "$UI"
+REACT_APP_GLOPFILE_API_ENDPOINT="http://${GLOPFILE_ADDRESS:-127.0.0.1}:${GLOPFILE_PORT:-8002}" \
+  exec yarn start

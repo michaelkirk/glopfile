@@ -107,13 +107,13 @@ impl Cli {
         no_relay: bool,
     ) -> Result<()> {
         let default_api_endpoint = option_env!("GLOPFILE_API_ENDPOINT")
-            .unwrap_or("http://localhost:8080")
+            .unwrap_or("https://relay.s.endoftheworl.de")
             .parse()
             .expect("invalid hardcoded url");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();
 
         let default_download_endpoint = option_env!("GLOPFILE_DOWNLOAD_ENDPOINT")
-            .unwrap_or("http://localhost:3000")
+            .unwrap_or("https://s.endoftheworl.de")
             .parse()
             .expect("invalid hardcoded url");
         let download_endpoint = download_endpoint
@@ -195,7 +195,7 @@ impl Cli {
         no_relay: bool,
     ) -> Result<()> {
         let default_api_endpoint = option_env!("GLOPFILE_API_ENDPOINT")
-            .unwrap_or("http://localhost:8080")
+            .unwrap_or("https://relay.s.endoftheworl.de")
             .parse()
             .expect("invalid hardcoded url");
         let api_endpoint = api_endpoint.unwrap_or(&default_api_endpoint).clone();

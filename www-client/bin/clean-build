@@ -2,8 +2,8 @@
 set -e
 set -x
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-cd $REPO_ROOT
+WWW_CLIENT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$WWW_CLIENT"
 
 rm -fr rust/pkg
 wasm-pack build --release --target bundler rust
@@ -17,10 +17,8 @@ rm -fr glopfile-ui/node_modules
 
 # Build for deploy
 (cd glopfile-ui && yarn install && yarn build)
-# Compress for deploy.
-# NOTE: we keep (-k) the original for the weirdos that don't support gzip and
-# for our nginx configuration, which will serve up our SPA index whenever
-# requesting a URL that doesn't exist on disk.
+# Compress for deploy: caddy serves the .gz to whoever accepts it, and we keep
+# (-k) the original for whoever does not.
 (cd glopfile-ui/build && find . -type f -name \*.wasm | xargs gzip -k -9)
 
 # Serve for dev

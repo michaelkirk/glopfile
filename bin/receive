@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Receive a file via a locally running relay. See bin/serve.
+# Receive a file via a locally running relay. See bin/serve-relay.
 #
 #   bin/receive DOWNLOAD_LINK [RECEIVE ARGS...]
 #

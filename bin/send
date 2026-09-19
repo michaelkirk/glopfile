@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Send a file via a locally running relay. See bin/serve.
+# Send a file via a locally running relay. See bin/serve-relay.
 #
 #   bin/send FILE [SEND ARGS...]
 #
