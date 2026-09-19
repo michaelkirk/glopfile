@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
+WWW_CLIENT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-(cd $REPO_ROOT/glopfile-ui && yarn prettier --write .)
-(cd $REPO_ROOT/glopfile && yarn prettier --write .)
+(cd $WWW_CLIENT/glopfile-ui && yarn prettier --write .)
+(cd $WWW_CLIENT/glopfile && yarn prettier --write .)

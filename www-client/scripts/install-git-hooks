@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
-cd $REPO_ROOT
+WWW_CLIENT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
-find bin/githooks -type f -exec ln -fs ../../{} .git/hooks \;
+hooks_dir="$(git rev-parse --git-common-dir)/hooks"
+mkdir -p "$hooks_dir"
+for hook in "$WWW_CLIENT"/scripts/githooks/*; do
+  ln -fs "$hook" "$hooks_dir/$(basename "$hook")"
+done
