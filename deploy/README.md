@@ -8,7 +8,7 @@ repo; nothing here publishes on a public interface.
 
 hemlock is deployed by ansible, not by the script below: the `glopfile` role in
 `hemlock-ansible` owns the compose file, the unit and the caddy vhost, and
-serves the relay at `api.s.endoftheworl.de`. The web client is the static site
+serves the relay at `relay.s.endoftheworl.de`. The web client is the static site
 at `s.endoftheworl.de`. Re-running that playbook deploys a new image.
 
 What follows is the generic path, for a host ansible does not manage.
