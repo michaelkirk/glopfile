@@ -75,7 +75,8 @@ mod tests {
     const TEST_FIXTURES_DIR: &str = "test_fixtures/";
     const SAMPLE_FILE_NAME: &str = "sample_file.txt";
 
-    /// A local transfer that takes longer than this has stalled.
+    /// A local transfer that takes longer than this has stalled. Stays above the p2p
+    /// timeouts below, so a stalled transfer reports which transport gave up.
     const ROUND_TRIP_TIMEOUT: Duration = Duration::from_secs(10);
 
     struct RoundTripTest {
@@ -163,7 +164,7 @@ mod tests {
         RoundTripTest {
             uploader_transport: Transport::Both,
             downloader_transport: Transport::P2P,
-            downloader_p2p_timeout: Some(Duration::from_secs(15)),
+            downloader_p2p_timeout: Some(Duration::from_secs(5)),
         }
         .run();
     }
