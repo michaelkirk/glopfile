@@ -168,6 +168,44 @@ mod tests {
         .run();
     }
 
+    /// A receiver who refused the relay gets an error, never a relayed transfer, even when the
+    /// relay is standing by to serve the very same file.
+    #[test]
+    fn p2p_only_never_falls_back_to_the_relay() {
+        init_test_logging();
+
+        let uploader = UploaderClient::new_testing(Transport::Relay);
+        let path = Path::new(TEST_FIXTURES_DIR).join(SAMPLE_FILE_NAME);
+        let provisioned_file = uploader.provision_file(&path).unwrap();
+        let download_url = provisioned_file.formatted_download_url_and_key();
+        std::thread::spawn(move || {
+            let _ignore = uploader.upload_provisioned_file(provisioned_file, drop);
+        });
+
+        let downloader =
+            DownloaderClient::from_testing_download_url(&download_url, Transport::P2P).unwrap();
+        let output_dir = tempfile::tempdir_in(env!("OUT_DIR")).unwrap().keep();
+        let meta = downloader.fetch_meta().unwrap();
+
+        let error = downloader
+            .download(
+                &meta,
+                Some(output_dir.clone()),
+                Some(Duration::from_secs(1)),
+                drop,
+            )
+            .expect_err("a p2p-only download has no peer to talk to");
+
+        assert!(matches!(error, Error::Timeout), "unexpected error: {error}");
+        assert_ne!(
+            fs::read(output_dir.join(SAMPLE_FILE_NAME)).unwrap_or_default(),
+            fs::read(path).unwrap(),
+            "the relay served a receiver that asked for p2p only"
+        );
+
+        let _ignore = fs::remove_dir_all(output_dir);
+    }
+
     /// With no peer to answer the offer, the downloader's p2p attempt times out and relay takes over.
     #[test]
     fn round_trip_fallback() {
