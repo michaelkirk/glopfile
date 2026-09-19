@@ -12,6 +12,9 @@ members = [
 exclude = [".worktrees", "ios-client", "www-client"]
 resolver = "2"
 
+[workspace.package]
+license = "MIT OR Apache-2.0"
+
 [workspace.dependencies]
 aes-gcm = "0.11.1"
 anyhow = "1.0.104"

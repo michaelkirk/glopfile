@@ -13,4 +13,5 @@ GitHub is the project's bug tracker. Please [search](https://github.com/michaelk
 
 ## License
 
-Not licensed yet.
+Licensed under either of [Apache License, Version 2.0](https://github.com/michaelkirk/glopfile/blob/main/LICENSE-APACHE) or
+[MIT license](https://github.com/michaelkirk/glopfile/blob/main/LICENSE-MIT) at your option.
