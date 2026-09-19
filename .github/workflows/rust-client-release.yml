@@ -10,6 +10,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   package_name: glopfile-cli
+  binary_name: glopfile
 
 # gh release create/upload writes to the repo.
 permissions:
@@ -72,7 +73,7 @@ jobs:
           archive_name="$package_name-$package_version-${{ matrix.platform }}"
           mkdir -p "$archive_name/"
           cp rust-client/README.md rust-client/Acknowledgements.md "$archive_name/"
-          cp "target/${{ matrix.target }}/distribution/$package_name" "$archive_name/"
+          cp "target/${{ matrix.target }}/distribution/$binary_name" "$archive_name/"
           tar -czf "$archive_name.tar.gz" "$archive_name/"
           echo "archive_filename=$archive_name.tar.gz" >> "$GITHUB_ENV"
 
