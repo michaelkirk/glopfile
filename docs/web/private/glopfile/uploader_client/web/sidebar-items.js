@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["UploadFileReadState"],"struct":["UploadFile","UploadFileReadError","WebProvisionedFile","WebUploadEventHandler","WebUploadableFile","WebUploaderClient"],"type":["PendingRead"]};

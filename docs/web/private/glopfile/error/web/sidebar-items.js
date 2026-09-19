@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ApiErrorResponseError","DecryptError","HTTPClientError","HTTPErrorResponseError","IOError","InvalidCipherKeyError","InvalidInputError","InvalidPeerMessageError","InvalidServerResponseError","RTCDataChannelError","TimeoutError","WebSocketClientError","WebSocketClosedError"]};

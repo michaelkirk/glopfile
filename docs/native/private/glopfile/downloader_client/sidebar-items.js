@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CHUNK_SIZE","MAX_P2P_INFLIGHT_DATA_LEN"],"enum":["RelayFallback"],"mod":["native"],"struct":["DownloadState","DownloadWebSocketMessageHandler","DownloaderClient","PeerToPeerConnectHandler"]};

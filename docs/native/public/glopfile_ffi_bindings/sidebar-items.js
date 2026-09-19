@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["write_bindings"],"mod":["bindings"]};

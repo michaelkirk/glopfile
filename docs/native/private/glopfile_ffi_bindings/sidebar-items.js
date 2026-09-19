@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GLOPFILE_UDL"],"fn":["path_arg","write_bindings"],"mod":["bindings"]};

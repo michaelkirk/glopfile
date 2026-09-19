@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Error","Transport"],"struct":["DownloadId","DownloadMeta","DownloaderClient","FileMeta","ProgressState","ProvisionedFile","UploaderClient"],"trait":["UploadableFile"],"type":["Result"]};

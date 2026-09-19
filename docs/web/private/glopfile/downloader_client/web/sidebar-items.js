@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["DownloadFile","DownloadFileWriteError","JsDownloadableFile","WebDownloadEventHandler","WebDownloaderClient"],"type":["PendingWrite"]};

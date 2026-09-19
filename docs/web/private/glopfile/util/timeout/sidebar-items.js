@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["sleep"],"struct":["AbortableTimeoutFuture","Sleep","TimeoutError","TimeoutFuture"],"trait":["TimeoutExt"],"type":["TimeoutResult"]};

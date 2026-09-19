@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["WebSocketCloseStatus","WebSocketError","WebSocketKnownCloseStatus"],"mod":["native","protocol"],"struct":["WebSocketClient","WebSocketConnection","WebSocketTaskHandle"],"trait":["WebSocketConnectionImpl","WebSocketMessageHandler"],"type":["DefaultWebSocketConnection"]};

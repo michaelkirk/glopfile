@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["glopfile",[["impl&lt;'de&gt; <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.229/serde_core/de/trait.Deserialize.html\" title=\"trait serde_core::de::Deserialize\">Deserialize</a>&lt;'de&gt; for <a class=\"struct\" href=\"glopfile/struct.FileMeta.html\" title=\"struct glopfile::FileMeta\">FileMeta</a>",0],["impl&lt;'de&gt; <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.229/serde_core/de/trait.Deserialize.html\" title=\"trait serde_core::de::Deserialize\">Deserialize</a>&lt;'de&gt; for <a class=\"struct\" href=\"glopfile/api_client/struct.ProvisionFileResponse.html\" title=\"struct glopfile::api_client::ProvisionFileResponse\">ProvisionFileResponse</a>",0],["impl&lt;'de&gt; <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.229/serde_core/de/trait.Deserialize.html\" title=\"trait serde_core::de::Deserialize\">Deserialize</a>&lt;'de&gt; for <a class=\"struct\" href=\"glopfile/api_client/struct.UploadConflictResponse.html\" title=\"struct glopfile::api_client::UploadConflictResponse\">UploadConflictResponse</a>",0],["impl&lt;'de&gt; <a class=\"trait\" href=\"https://docs.rs/serde_core/1.0.229/serde_core/de/trait.Deserialize.html\" title=\"trait serde_core::de::Deserialize\">Deserialize</a>&lt;'de&gt; for <a class=\"enum\" href=\"glopfile/api_client/enum.UploadResponse.html\" title=\"enum glopfile::api_client::UploadResponse\">UploadResponse</a>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1396]}

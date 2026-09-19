@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["TargetLanguage"],"fn":["generate","generate_swift_bindings","generate_with_bindgen_paths"],"mod":["python"],"struct":["GenerateOptions","SwiftBindingsOptions"]};

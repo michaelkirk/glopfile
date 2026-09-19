@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SessionDescriptionType"],"mod":["rtc_signaling_message","web_socket_message"],"struct":["EncryptedRtcSignalingMessage","IceCandidate","RtcSignalingMessage","SessionDescription","UploadDataAck","WebSocketMessage"]};

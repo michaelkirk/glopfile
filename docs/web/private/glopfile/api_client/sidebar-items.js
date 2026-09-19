@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CONTENT_TIMEOUT","REQUEST_TIMEOUT"],"enum":["DecryptedFileWriteState","UploadResponse"],"struct":["ApiClient","DecryptedFile","DecryptedFileShared","DownloadId","DownloadMeta","EncryptedFile","FileMeta","ProvisionFileResponse","UploadConflictResponse"]};
