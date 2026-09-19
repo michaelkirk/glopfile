@@ -41,18 +41,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # A deployment passes the relay's own arguments to the image, so the
-      # image has to hand them to the relay rather than to docker. With a
-      # command and no entrypoint, docker tries to run `--address` as a
-      # program and the container exits 127.
       - name: the image serves the api
         if: github.ref != 'refs/heads/main'
         run: |
           set -euo pipefail
           image=ghcr.io/${{ github.repository_owner }}/glopfile:latest
 
-          # The port the relay listens on inside is only the same as the one
-          # we publish when we ask it for one, so both are given.
           serves() {
             local name=$1 published=$2 inside=$3
             shift 3
