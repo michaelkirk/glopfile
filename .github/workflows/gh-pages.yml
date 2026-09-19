@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - gh-pages-source
   workflow_dispatch:
 
 env:
@@ -33,7 +32,8 @@ jobs:
           cargo doc --lib --workspace --no-deps \
             --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
           mv target/doc/ docs/native/public/
-          cargo doc --lib --workspace --no-deps --document-private-items
+          cargo doc --lib --workspace --no-deps --document-private-items \
+            --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
           mv target/doc/ docs/native/private/
 
       # getrandom needs to be told which wasm backend to use, or it refuses to
@@ -45,7 +45,9 @@ jobs:
           cargo doc --lib --workspace --no-deps --target wasm32-unknown-unknown \
             --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
           mv target/wasm32-unknown-unknown/doc/ docs/web/public/
-          cargo doc --lib --workspace --no-deps --document-private-items --target wasm32-unknown-unknown
+          cargo doc --lib --workspace --no-deps --document-private-items \
+            --target wasm32-unknown-unknown \
+            --exclude glopfile-macros --exclude glopfile-cli --exclude glopfile-relay
           mv target/wasm32-unknown-unknown/doc/ docs/web/private/
 
       - name: push docs to gh-pages
