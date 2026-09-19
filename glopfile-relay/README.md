@@ -24,8 +24,11 @@ everything.
 
 ## Running with docker
 
+The relay is a workspace member, so the image builds from the repository root:
+
 ```
-$ container=$(docker run -p 8080:8080 --detach $(docker build -q .))
+$ docker build -f glopfile-relay/Dockerfile -t glopfile-relay ..
+$ docker run -p 8080:8080 --detach glopfile-relay
 ```
 
 ## Tests
@@ -33,6 +36,38 @@ $ container=$(docker run -p 8080:8080 --detach $(docker build -q .))
 ```
 $ cargo test
 ```
+
+## Behind a reverse proxy
+
+The relay streams an upload straight through to the downloader, which most
+proxies are configured wrong for by default. Whatever fronts it must:
+
+* **Not buffer requests or responses.** With buffering on — nginx's default —
+  the proxy holds the whole upload before contacting the relay, and the
+  downloader receives nothing until the upload has finished. Measured over a
+  512K transfer: 0 bytes delivered mid-flight with buffering on, 262K with it
+  off. The transfer still completes, so this fails silently.
+* **Allow long-lived requests.** An uploader holds its request open until a
+  downloader appears, which is unbounded.
+* **Proxy websocket upgrades**, for `/api/v1/{upload,download}/{id}/ws`.
+
+caddy needs `flush_interval -1` for the first of those and handles the rest on
+its own.
+
+## Why only one
+
+Sessions live in this process's memory, so a transfer only works if the
+uploader and the downloader reach the *same* one. Running two behind a load
+balancer silently breaks transfers.
+
+The Erlang implementation this replaced could run several nodes, because its
+session table was a clustered mnesia table. The rust rewrite dropped the
+cluster deliberately.
+
+Scaling out again needs either the node's identity embedded in the generated
+session id, so the proxy can route every `/{id}` path to the node that owns it,
+or a shared session table. `POST /api/v1/files` carries no id, so plain sticky
+routing is not enough on its own.
 
 ## API
 
