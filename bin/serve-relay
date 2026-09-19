@@ -2,7 +2,7 @@
 #
 # Run the relay locally for development.
 #
-#   bin/serve [RELAY ARGS...]
+#   bin/serve-relay [RELAY ARGS...]
 #
 # Listens on GLOPFILE_ADDRESS:GLOPFILE_PORT (127.0.0.1:8002 by default). Extra
 # arguments go to the relay, and a repeated flag there wins over the default.

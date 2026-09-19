@@ -5,6 +5,6 @@ WWW_CLIENT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 hooks_dir="$(git rev-parse --git-common-dir)/hooks"
 mkdir -p "$hooks_dir"
-for hook in "$WWW_CLIENT"/scripts/githooks/*; do
+for hook in "$WWW_CLIENT"/bin/githooks/*; do
   ln -fs "$hook" "$hooks_dir/$(basename "$hook")"
 done
